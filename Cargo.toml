@@ -1,0 +1,25 @@
+[package]
+name = "libos-terminal"
+edition = "2021"
+
+[lib]
+name = "os_terminal"
+crate-type = ["staticlib"]
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = 3
+strip = true
+codegen-units = 1
+
+[dependencies]
+spin = "0.9.8"
+
+[dependencies.os-terminal]
+version = "0.4.4"
+features = ["truetype"]
+default-features = false
