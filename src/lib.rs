@@ -6,6 +6,7 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
+use alloc::ffi::CString;
 use core::alloc::{GlobalAlloc, Layout};
 use core::ffi::{c_char, c_uchar, c_uint, c_void};
 use core::fmt;
@@ -13,7 +14,7 @@ use core::fmt::Write;
 use core::panic::PanicInfo;
 use core::slice::from_raw_parts_mut;
 use os_terminal::font::TrueTypeFont;
-use os_terminal::{DrawTarget, Rgb888, Terminal};
+use os_terminal::{DrawTarget, Palette, Rgb888, Terminal};
 use spin::Mutex;
 
 #[panic_handler]
@@ -118,8 +119,35 @@ impl DrawTarget for Display {
     }
 }
 
+#[repr(C)]
+pub struct TerminalPalette {
+    foreground: u32,
+    background: u32,
+    ansi_colors: [u32; 16],
+}
+
+impl From<TerminalPalette> for Palette {
+    fn from(palette: TerminalPalette) -> Self {
+        let u32_to_rgb888 = |u32: u32| {
+            ((u32 >> 16) as u8, (u32 >> 8) as u8, u32 as u8)
+        };
+
+        let mut ansi_colors = [Rgb888::default(); 16];
+        for (i, &color) in palette.ansi_colors.iter().enumerate() {
+            ansi_colors[i] = u32_to_rgb888(color);
+        }
+
+        Self {
+            foreground: u32_to_rgb888(palette.foreground),
+            background: u32_to_rgb888(palette.background),
+            ansi_colors,
+        }
+    }
+}
+
 #[no_mangle]
 #[allow(static_mut_refs)]
+#[cfg(feature = "embedded-font")]
 pub unsafe extern "C" fn terminal_init(
     width: c_uint,
     height: c_uint,
@@ -136,6 +164,7 @@ pub unsafe extern "C" fn terminal_init(
     if malloc.is_none() || free.is_none() {
         return false;
     }
+
     MALLOC = malloc;
     FREE = free;
     SERIAL_PRINT = serial_print;
@@ -143,8 +172,51 @@ pub unsafe extern "C" fn terminal_init(
     let display = Display::new(width, height, buffer);
     let mut terminal = Terminal::new(display);
 
-    let font_buffer = include_bytes!("../fonts/SourceHanMonoSC-Min3500.otf");
+    let font_buffer = include_bytes!("../fonts/SourceHanMonoSC-Min3500.ttf");
     terminal.set_font_manager(Box::new(TrueTypeFont::new(10.0, font_buffer)));
+
+    if serial_print.is_some() {
+        println!("Terminal: serial print is set!");
+        terminal.set_logger(Some(|args| println!("Terminal: {:?}", args)));
+    }
+
+    TERMINAL.lock().replace(terminal);
+
+    true
+}
+
+#[no_mangle]
+#[allow(static_mut_refs)]
+#[cfg(not(feature = "embedded-font"))]
+pub unsafe extern "C" fn terminal_init(
+    width: c_uint,
+    height: c_uint,
+    screen: *mut u32,
+    malloc: Option<extern "C" fn(usize) -> *mut c_void>,
+    free: Option<extern "C" fn(*mut c_void)>,
+    serial_print: Option<extern "C" fn(*const c_char)>,
+    font_buffer: *const u8,
+    font_buffer_size: c_uint,
+    font_size: c_uint,
+) -> bool {
+    let width = width as usize;
+    let height = height as usize;
+    let buffer = from_raw_parts_mut(screen, width * height);
+
+    // serial_print can be null
+    if malloc.is_none() || free.is_none() || font_buffer == core::ptr::null() {
+        return false;
+    }
+
+    MALLOC = malloc;
+    FREE = free;
+    SERIAL_PRINT = serial_print;
+
+    let display = Display::new(width, height, buffer);
+    let mut terminal = Terminal::new(display);
+
+    let font_buffer = core::slice::from_raw_parts(font_buffer, font_buffer_size as usize);
+    terminal.set_font_manager(Box::new(TrueTypeFont::new(font_size as f32, font_buffer)));
 
     if serial_print.is_some() {
         println!("Terminal: serial print is set!");
@@ -195,8 +267,22 @@ pub extern "C" fn terminal_advance_state_single(c: c_char) {
 pub extern "C" fn terminal_handle_keyboard(scancode: c_uchar) -> *const c_char {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         if let Some(s) = terminal.handle_keyboard(scancode) {
-            return s.as_ptr() as *const c_char;
+            return CString::new(s).unwrap().into_raw();
         }
     }
     core::ptr::null()
+}
+
+#[no_mangle]
+pub extern "C" fn terminal_set_color_scheme(palette_index: c_uint) {
+    if let Some(terminal) = TERMINAL.lock().as_mut() {
+        terminal.set_color_scheme(palette_index as usize);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn terminal_set_custom_color_scheme(palette: TerminalPalette) {
+    if let Some(terminal) = TERMINAL.lock().as_mut() {
+        terminal.set_custom_color_scheme(palette.into());
+    }
 }

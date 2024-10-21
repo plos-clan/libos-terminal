@@ -1,0 +1,32 @@
+name: Release
+
+permissions:
+  contents: write
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/create-gh-release-action@v1
+        with:
+          title: Nightly build
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  upload-assets:
+    needs: create-release
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: libos_terminal
+          target: ${{ matrix.target }}
+          tar: false
+          zip: false
+          features: ${{ matrix.features || '' }}
+          token: ${{ secrets.GITHUB_TOKEN }}
