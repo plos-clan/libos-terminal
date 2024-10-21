@@ -16,10 +16,10 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Set up Rust
-      uses: actions-rs/toolchain@v1
+      uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         toolchain: nightly
         override: true
@@ -30,13 +30,21 @@ jobs:
     - name: Add rust-src component for nightly toolchain
       run: rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
 
-    - name: Build release
+    - name: Build release without embedded-font feature
       run: cargo build --release
 
-    - name: Rename and move artifacts
+    - name: Rename and move artifacts without embedded-font feature
       run: |
         mv target/x86_64-unknown-none/release/libos_terminal.a libos_terminal-x86_64.a
         mv target/i686-unknown-none/release/libos_terminal.a libos_terminal-i686.a
+
+    - name: Build release with embedded-font feature
+      run: cargo build --release --features embedded-font
+
+    - name: Rename and move artifacts with embedded-font feature
+      run: |
+        mv target/x86_64-unknown-none/release/libos_terminal.a libos_terminal-embedfont-x86_64.a
+        mv target/i686-unknown-none/release/libos_terminal.a libos_terminal-embedfont-i686.a
 
     - name: Print artifact sizes
       run: |
@@ -44,6 +52,10 @@ jobs:
         du -h libos_terminal-x86_64.a
         echo "Size of libos_terminal-i686.a:"
         du -h libos_terminal-i686.a
+        echo "Size of libos_terminal-embedfont-x86_64.a:"
+        du -h libos_terminal-embedfont-x86_64.a
+        echo "Size of libos_terminal-embedfont-i686.a:"
+        du -h libos_terminal-embedfont-i686.a
 
     - name: Release
       uses: softprops/action-gh-release@v2
@@ -53,3 +65,5 @@ jobs:
         files: |
           libos_terminal-x86_64.a
           libos_terminal-i686.a
+          libos_terminal-embedfont-x86_64.a
+          libos_terminal-embedfont-i686.a
