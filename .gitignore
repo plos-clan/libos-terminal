@@ -1,1 +1,5 @@
+# Cbindgen files
+*.h
+
+# Build cache
 /target

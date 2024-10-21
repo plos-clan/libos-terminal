@@ -1,0 +1,11 @@
+language = "C"
+pragma_once = true
+no_includes = true
+cpp_compat = true
+usize_is_size_t = true
+
+[defines]
+"feature = embedded-font" = "TERMINAL_EMBEDDED_FONT"
+
+[export]
+exclude = ["fmaxf", "fminf"]

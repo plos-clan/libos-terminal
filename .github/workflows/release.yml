@@ -27,37 +27,32 @@ jobs:
     - name: Add x86_64-unknown-none target
       run: rustup target add x86_64-unknown-none
 
-    - name: Add rust-src component for nightly toolchain
+    - name: Install cbindgen
+      run: cargo install cbindgen
+
+    - name: Add rust-src component
       run: rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
 
-    - name: Build release without embedded-font feature
+    - name: Build general release
       run: cargo build --release
 
-    - name: Rename and move artifacts without embedded-font feature
+    - name: Move general artifacts
       run: |
         mv target/x86_64-unknown-none/release/libos_terminal.a libos_terminal-x86_64.a
         mv target/i686-unknown-none/release/libos_terminal.a libos_terminal-i686.a
 
-    - name: Build release with embedded-font feature
+    - name: Build embedded-font release
       run: cargo build --release --features embedded-font
 
-    - name: Rename and move artifacts with embedded-font feature
+    - name: Move embedded-font artifacts
       run: |
         mv target/x86_64-unknown-none/release/libos_terminal.a libos_terminal-embedfont-x86_64.a
         mv target/i686-unknown-none/release/libos_terminal.a libos_terminal-embedfont-i686.a
 
-    - name: Print artifact sizes
-      run: |
-        echo "Size of libos_terminal-x86_64.a:"
-        du -h libos_terminal-x86_64.a
-        echo "Size of libos_terminal-i686.a:"
-        du -h libos_terminal-i686.a
-        echo "Size of libos_terminal-embedfont-x86_64.a:"
-        du -h libos_terminal-embedfont-x86_64.a
-        echo "Size of libos_terminal-embedfont-i686.a:"
-        du -h libos_terminal-embedfont-i686.a
+    - name: Generate header
+      run: cbindgen --output libos_terminal.h
 
-    - name: Release
+    - name: Release artifacts
       uses: softprops/action-gh-release@v2
       with:
         name: Nightly build
@@ -67,3 +62,4 @@ jobs:
           libos_terminal-i686.a
           libos_terminal-embedfont-x86_64.a
           libos_terminal-embedfont-i686.a
+          libos_terminal.h

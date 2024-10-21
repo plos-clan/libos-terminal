@@ -8,7 +8,7 @@ extern crate alloc;
 use alloc::boxed::Box;
 use alloc::ffi::CString;
 use core::alloc::{GlobalAlloc, Layout};
-use core::ffi::{c_char, c_uchar, c_uint, c_void};
+use core::ffi::{c_char, c_void, CStr};
 use core::fmt;
 use core::fmt::Write;
 use core::panic::PanicInfo;
@@ -67,7 +67,7 @@ pub fn _print(args: fmt::Arguments) {
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => (
-        crate::_print(format_args!($($arg)*))
+        $crate::_print(format_args!($($arg)*))
     )
 }
 
@@ -149,15 +149,14 @@ impl From<TerminalPalette> for Palette {
 #[allow(static_mut_refs)]
 #[cfg(feature = "embedded-font")]
 pub unsafe extern "C" fn terminal_init(
-    width: c_uint,
-    height: c_uint,
+    width: usize,
+    height: usize,
     screen: *mut u32,
+    font_size: f32,
     malloc: Option<extern "C" fn(usize) -> *mut c_void>,
     free: Option<extern "C" fn(*mut c_void)>,
     serial_print: Option<extern "C" fn(*const c_char)>,
 ) -> bool {
-    let width = width as usize;
-    let height = height as usize;
     let buffer = from_raw_parts_mut(screen, width * height);
 
     // serial_print can be null
@@ -173,7 +172,7 @@ pub unsafe extern "C" fn terminal_init(
     let mut terminal = Terminal::new(display);
 
     let font_buffer = include_bytes!("../fonts/SourceHanMonoSC-Min3500.ttf");
-    terminal.set_font_manager(Box::new(TrueTypeFont::new(10.0, font_buffer)));
+    terminal.set_font_manager(Box::new(TrueTypeFont::new(font_size, font_buffer)));
 
     if serial_print.is_some() {
         println!("Terminal: serial print is set!");
@@ -189,22 +188,20 @@ pub unsafe extern "C" fn terminal_init(
 #[allow(static_mut_refs)]
 #[cfg(not(feature = "embedded-font"))]
 pub unsafe extern "C" fn terminal_init(
-    width: c_uint,
-    height: c_uint,
+    width: usize,
+    height: usize,
     screen: *mut u32,
+    font_buffer: *const u8,
+    font_buffer_size: usize,
+    font_size: f32,
     malloc: Option<extern "C" fn(usize) -> *mut c_void>,
     free: Option<extern "C" fn(*mut c_void)>,
     serial_print: Option<extern "C" fn(*const c_char)>,
-    font_buffer: *const u8,
-    font_buffer_size: c_uint,
-    font_size: c_uint,
 ) -> bool {
-    let width = width as usize;
-    let height = height as usize;
     let buffer = from_raw_parts_mut(screen, width * height);
 
     // serial_print can be null
-    if malloc.is_none() || free.is_none() || font_buffer == core::ptr::null() {
+    if malloc.is_none() || free.is_none() || font_buffer.is_null() {
         return false;
     }
 
@@ -215,8 +212,8 @@ pub unsafe extern "C" fn terminal_init(
     let display = Display::new(width, height, buffer);
     let mut terminal = Terminal::new(display);
 
-    let font_buffer = core::slice::from_raw_parts(font_buffer, font_buffer_size as usize);
-    terminal.set_font_manager(Box::new(TrueTypeFont::new(font_size as f32, font_buffer)));
+    let font_buffer = core::slice::from_raw_parts(font_buffer, font_buffer_size);
+    terminal.set_font_manager(Box::new(TrueTypeFont::new(font_size, font_buffer)));
 
     if serial_print.is_some() {
         println!("Terminal: serial print is set!");
@@ -241,7 +238,7 @@ pub extern "C" fn terminal_flush() {
 }
 
 #[no_mangle]
-pub extern "C" fn terminal_set_auto_flush(auto_flush: c_uint) {
+pub extern "C" fn terminal_set_auto_flush(auto_flush: usize) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         terminal.set_auto_flush(auto_flush != 0);
     }
@@ -249,7 +246,7 @@ pub extern "C" fn terminal_set_auto_flush(auto_flush: c_uint) {
 
 #[no_mangle]
 pub extern "C" fn terminal_advance_state(s: *const c_char) {
-    let s = unsafe { core::ffi::CStr::from_ptr(s) };
+    let s = unsafe { CStr::from_ptr(s) };
     let s = s.to_str().unwrap();
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         terminal.advance_state(s.as_bytes());
@@ -264,7 +261,7 @@ pub extern "C" fn terminal_advance_state_single(c: c_char) {
 }
 
 #[no_mangle]
-pub extern "C" fn terminal_handle_keyboard(scancode: c_uchar) -> *const c_char {
+pub extern "C" fn terminal_handle_keyboard(scancode: u8) -> *const c_char {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         if let Some(s) = terminal.handle_keyboard(scancode) {
             return CString::new(s).unwrap().into_raw();
@@ -274,9 +271,9 @@ pub extern "C" fn terminal_handle_keyboard(scancode: c_uchar) -> *const c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn terminal_set_color_scheme(palette_index: c_uint) {
+pub extern "C" fn terminal_set_color_scheme(palette_index: usize) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
-        terminal.set_color_scheme(palette_index as usize);
+        terminal.set_color_scheme(palette_index);
     }
 }
 
