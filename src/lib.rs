@@ -128,9 +128,7 @@ pub struct TerminalPalette {
 
 impl From<TerminalPalette> for Palette {
     fn from(palette: TerminalPalette) -> Self {
-        let u32_to_rgb888 = |u32: u32| {
-            ((u32 >> 16) as u8, (u32 >> 8) as u8, u32 as u8)
-        };
+        let u32_to_rgb888 = |u32: u32| ((u32 >> 16) as u8, (u32 >> 8) as u8, u32 as u8);
 
         let mut ansi_colors = [Rgb888::default(); 16];
         for (i, &color) in palette.ansi_colors.iter().enumerate() {
@@ -157,31 +155,18 @@ pub unsafe extern "C" fn terminal_init(
     free: Option<extern "C" fn(*mut c_void)>,
     serial_print: Option<extern "C" fn(*const c_char)>,
 ) -> bool {
-    let buffer = from_raw_parts_mut(screen, width * height);
-
-    // serial_print can be null
-    if malloc.is_none() || free.is_none() {
-        return false;
-    }
-
-    MALLOC = malloc;
-    FREE = free;
-    SERIAL_PRINT = serial_print;
-
-    let display = Display::new(width, height, buffer);
-    let mut terminal = Terminal::new(display);
-
     let font_buffer = include_bytes!("../fonts/SourceHanMonoSC-Min3500.ttf");
-    terminal.set_font_manager(Box::new(TrueTypeFont::new(font_size, font_buffer)));
-
-    if serial_print.is_some() {
-        println!("Terminal: serial print is set!");
-        terminal.set_logger(Some(|args| println!("Terminal: {:?}", args)));
-    }
-
-    TERMINAL.lock().replace(terminal);
-
-    true
+    terminal_init_internal(
+        width,
+        height,
+        screen,
+        font_buffer.as_ptr(),
+        font_buffer.len(),
+        font_size,
+        malloc,
+        free,
+        serial_print,
+    )
 }
 
 #[no_mangle]
@@ -198,9 +183,32 @@ pub unsafe extern "C" fn terminal_init(
     free: Option<extern "C" fn(*mut c_void)>,
     serial_print: Option<extern "C" fn(*const c_char)>,
 ) -> bool {
+    terminal_init_internal(
+        width,
+        height,
+        screen,
+        font_buffer,
+        font_buffer_size,
+        font_size,
+        malloc,
+        free,
+        serial_print,
+    )
+}
+
+unsafe fn terminal_init_internal(
+    width: usize,
+    height: usize,
+    screen: *mut u32,
+    font_buffer: *const u8,
+    font_buffer_size: usize,
+    font_size: f32,
+    malloc: Option<extern "C" fn(usize) -> *mut c_void>,
+    free: Option<extern "C" fn(*mut c_void)>,
+    serial_print: Option<extern "C" fn(*const c_char)>,
+) -> bool {
     let buffer = from_raw_parts_mut(screen, width * height);
 
-    // serial_print can be null
     if malloc.is_none() || free.is_none() || font_buffer.is_null() {
         return false;
     }
