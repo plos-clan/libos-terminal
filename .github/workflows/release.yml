@@ -1,0 +1,55 @@
+name: Build and Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches: [ "main" ]
+    paths-ignore:
+      - 'README.md'
+      - '.gitignore'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
+        override: true
+
+    - name: Add x86_64-unknown-none target
+      run: rustup target add x86_64-unknown-none
+
+    - name: Add rust-src component for nightly toolchain
+      run: rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
+
+    - name: Build release
+      run: cargo build --release
+
+    - name: Rename and move artifacts
+      run: |
+        mv target/x86_64-unknown-none/release/libos_terminal.a libos_terminal-x86_64.a
+        mv target/i686-unknown-none/release/libos_terminal.a libos_terminal-i686.a
+
+    - name: Print artifact sizes
+      run: |
+        echo "Size of libos_terminal-x86_64.a:"
+        du -h libos_terminal-x86_64.a
+        echo "Size of libos_terminal-i686.a:"
+        du -h libos_terminal-i686.a
+
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      with:
+        name: Nightly build
+        tag_name: release
+        files: |
+          libos_terminal-x86_64.a
+          libos_terminal-i686.a

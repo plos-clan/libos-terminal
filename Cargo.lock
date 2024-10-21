@@ -75,9 +75,9 @@ dependencies = [
 
 [[package]]
 name = "os-terminal"
-version = "0.4.4"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89c51409594fd24fd65cdb6fe62bb95dd063b2e5f03f19116f52858cb8964143"
+checksum = "1c02b9cba07d75619d19287c15d713c2c965d8a90218ea959ef108cb0f979c84"
 dependencies = [
  "ab_glyph",
  "bitflags",
