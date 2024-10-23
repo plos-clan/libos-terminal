@@ -34,20 +34,19 @@ jobs:
       run: rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
 
     - name: Build general release
-      run: cargo build --release
-
-    - name: Move general artifacts
       run: |
+        cargo build --release
         mv target/x86_64-unknown-none/release/libos_terminal.a libos_terminal-x86_64.a
         mv target/i686-unknown-none/release/libos_terminal.a libos_terminal-i686.a
 
     - name: Build embedded-font release
-      run: cargo build --release --features embedded-font
-
-    - name: Move embedded-font artifacts
       run: |
+        FONT_PATH="../fonts/SourceCodePro.otf" cargo build --release --features embedded-font
         mv target/x86_64-unknown-none/release/libos_terminal.a libos_terminal-embedfont-x86_64.a
         mv target/i686-unknown-none/release/libos_terminal.a libos_terminal-embedfont-i686.a
+        FONT_PATH="../fonts/FiraCodeNotoSans.ttf" cargo build --release --features embedded-font
+        mv target/x86_64-unknown-none/release/libos_terminal.a libos_terminal-embedfont-sc-x86_64.a
+        mv target/i686-unknown-none/release/libos_terminal.a libos_terminal-embedfont-sc-i686.a
 
     - name: Generate header
       run: cbindgen --output libos_terminal.h
@@ -62,4 +61,6 @@ jobs:
           libos_terminal-i686.a
           libos_terminal-embedfont-x86_64.a
           libos_terminal-embedfont-i686.a
+          libos_terminal-embedfont-sc-x86_64.a
+          libos_terminal-embedfont-sc-i686.a
           libos_terminal.h

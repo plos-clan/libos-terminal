@@ -155,7 +155,7 @@ pub unsafe extern "C" fn terminal_init(
     free: Option<extern "C" fn(*mut c_void)>,
     serial_print: Option<extern "C" fn(*const c_char)>,
 ) -> bool {
-    let font_buffer = include_bytes!("../fonts/SourceHanMonoSC-Min3500.ttf");
+    let font_buffer = include_bytes!(env!("FONT_PATH"));
     terminal_init_internal(
         width,
         height,
