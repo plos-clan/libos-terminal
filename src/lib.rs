@@ -6,12 +6,12 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use alloc::ffi::CString;
 use core::alloc::{GlobalAlloc, Layout};
 use core::ffi::{c_char, c_void, CStr};
 use core::fmt;
 use core::fmt::Write;
 use core::panic::PanicInfo;
+use core::ptr::copy_nonoverlapping;
 use core::slice::from_raw_parts_mut;
 use os_terminal::font::TrueTypeFont;
 use os_terminal::{DrawTarget, Palette, Rgb888, Terminal};
@@ -53,7 +53,11 @@ struct Print;
 impl Write for Print {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         if let Some(serial_print) = unsafe { SERIAL_PRINT } {
-            serial_print(s.as_ptr() as *const c_char);
+            let mut buffer = [0u8; 1024];
+            buffer[..s.len()].copy_from_slice(s.as_bytes());
+            buffer[s.len()] = 0;
+            let c_str = CStr::from_bytes_until_nul(&buffer).unwrap();
+            serial_print(c_str.as_ptr());
         }
         Ok(())
     }
@@ -61,7 +65,7 @@ impl Write for Print {
 
 #[inline]
 pub fn _print(args: fmt::Arguments) {
-    Print.write_fmt(format_args!("{}\0", args)).unwrap();
+    Print.write_fmt(format_args!("{}", args)).unwrap();
 }
 
 #[macro_export]
@@ -254,10 +258,10 @@ pub extern "C" fn terminal_set_auto_flush(auto_flush: usize) {
 
 #[no_mangle]
 pub extern "C" fn terminal_advance_state(s: *const c_char) {
-    let s = unsafe { CStr::from_ptr(s) };
-    let s = s.to_str().unwrap();
-    if let Some(terminal) = TERMINAL.lock().as_mut() {
-        terminal.advance_state(s.as_bytes());
+    if let Ok(s) = unsafe { CStr::from_ptr(s).to_str() } {
+        if let Some(terminal) = TERMINAL.lock().as_mut() {
+            terminal.advance_state(s.as_bytes());
+        }
     }
 }
 
@@ -266,16 +270,6 @@ pub extern "C" fn terminal_advance_state_single(c: c_char) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         terminal.advance_state(&[c as u8]);
     }
-}
-
-#[no_mangle]
-pub extern "C" fn terminal_handle_keyboard(scancode: u8) -> *const c_char {
-    if let Some(terminal) = TERMINAL.lock().as_mut() {
-        if let Some(s) = terminal.handle_keyboard(scancode) {
-            return CString::new(s).unwrap().into_raw();
-        }
-    }
-    core::ptr::null()
 }
 
 #[no_mangle]
@@ -290,4 +284,17 @@ pub extern "C" fn terminal_set_custom_color_scheme(palette: TerminalPalette) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         terminal.set_custom_color_scheme(palette.into());
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn terminal_handle_keyboard(scancode: u8, buffer: *mut c_char) -> bool {
+    if let Some(terminal) = TERMINAL.lock().as_mut() {
+        if let Some(s) = terminal.handle_keyboard(scancode) {
+            let bytes = s.as_bytes();
+            copy_nonoverlapping(bytes.as_ptr(), buffer as *mut u8, bytes.len());
+            *buffer.add(bytes.len()) = 0;
+            return true;
+        }
+    }
+    false
 }

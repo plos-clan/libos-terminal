@@ -49,7 +49,7 @@ jobs:
         mv target/i686-unknown-none/release/libos_terminal.a libos_terminal-embedfont-sc-i686.a
 
     - name: Generate header
-      run: cbindgen --output libos_terminal.h
+      run: cbindgen --output os_terminal.h
 
     - name: Release artifacts
       uses: softprops/action-gh-release@v2
@@ -63,4 +63,4 @@ jobs:
           libos_terminal-embedfont-i686.a
           libos_terminal-embedfont-sc-x86_64.a
           libos_terminal-embedfont-sc-i686.a
-          libos_terminal.h
+          os_terminal.h
