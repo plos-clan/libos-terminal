@@ -20,7 +20,7 @@ codegen-units = 1
 spin = "0.9.8"
 
 [dependencies.os-terminal]
-version = "0.4.7"
+version = "0.4.8"
 features = ["truetype"]
 default-features = false
 
