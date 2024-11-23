@@ -14,7 +14,7 @@ use core::panic::PanicInfo;
 use core::ptr::copy_nonoverlapping;
 use core::slice::from_raw_parts_mut;
 use os_terminal::font::TrueTypeFont;
-use os_terminal::{DrawTarget, Palette, Rgb888, Terminal};
+use os_terminal::{DrawTarget, Palette, Rgb, Terminal};
 use spin::Mutex;
 
 #[panic_handler]
@@ -34,10 +34,6 @@ fn alloc_error_handler(layout: Layout) -> ! {
 
 struct Allocator;
 
-static mut MALLOC: Option<extern "C" fn(usize) -> *mut c_void> = None;
-static mut FREE: Option<extern "C" fn(*mut c_void)> = None;
-static mut SERIAL_PRINT: Option<extern "C" fn(*const c_char)> = None;
-
 unsafe impl GlobalAlloc for Allocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         MALLOC.unwrap()(layout.size()) as *mut u8
@@ -47,6 +43,10 @@ unsafe impl GlobalAlloc for Allocator {
         FREE.unwrap()(ptr as *mut c_void);
     }
 }
+
+static mut MALLOC: Option<extern "C" fn(usize) -> *mut c_void> = None;
+static mut FREE: Option<extern "C" fn(*mut c_void)> = None;
+static mut SERIAL_PRINT: Option<extern "C" fn(*const c_char)> = None;
 
 struct Print;
 
@@ -95,18 +95,25 @@ extern "C" fn fminf(x: f32, y: f32) -> f32 {
 
 static TERMINAL: Mutex<Option<Terminal<Display>>> = Mutex::new(None);
 
-struct Display {
+pub struct Display {
     width: usize,
     height: usize,
     buffer: &'static mut [u32],
 }
 
-impl Display {
-    fn new(width: usize, height: usize, buffer: &'static mut [u32]) -> Self {
-        Display {
-            width,
-            height,
-            buffer,
+#[repr(C)]
+pub struct TerminalDisplay {
+    width: usize,
+    height: usize,
+    address: *mut u32,
+}
+
+impl From<&TerminalDisplay> for Display {
+    fn from(info: &TerminalDisplay) -> Self {
+        Self {
+            width: info.width,
+            height: info.height,
+            buffer: unsafe { from_raw_parts_mut(info.address, info.width * info.height) },
         }
     }
 }
@@ -117,7 +124,7 @@ impl DrawTarget for Display {
     }
 
     #[inline(always)]
-    fn draw_pixel(&mut self, x: usize, y: usize, color: Rgb888) {
+    fn draw_pixel(&mut self, x: usize, y: usize, color: Rgb) {
         let value = (color.0 as u32) << 16 | (color.1 as u32) << 8 | color.2 as u32;
         self.buffer[y * self.width + x] = value;
     }
@@ -132,38 +139,40 @@ pub struct TerminalPalette {
 
 impl From<TerminalPalette> for Palette {
     fn from(palette: TerminalPalette) -> Self {
-        let u32_to_rgb888 = |u32: u32| ((u32 >> 16) as u8, (u32 >> 8) as u8, u32 as u8);
+        let u32_to_rgb = |u32: u32| ((u32 >> 16) as u8, (u32 >> 8) as u8, u32 as u8);
 
-        let mut ansi_colors = [Rgb888::default(); 16];
-        for (i, &color) in palette.ansi_colors.iter().enumerate() {
-            ansi_colors[i] = u32_to_rgb888(color);
-        }
+        let color_pair = (
+            u32_to_rgb(palette.foreground),
+            u32_to_rgb(palette.background),
+        );
 
         Self {
-            foreground: u32_to_rgb888(palette.foreground),
-            background: u32_to_rgb888(palette.background),
-            ansi_colors,
+            color_pair,
+            ansi_colors: palette.ansi_colors.map(u32_to_rgb),
         }
     }
 }
 
+#[repr(C)]
+pub enum TerminalInitResult {
+    Success,
+    MallocIsNull,
+    FreeIsNull,
+    FontBufferIsNull,
+}
+
 #[no_mangle]
-#[allow(static_mut_refs)]
 #[cfg(feature = "embedded-font")]
 pub unsafe extern "C" fn terminal_init(
-    width: usize,
-    height: usize,
-    screen: *mut u32,
+    display: *const TerminalDisplay,
     font_size: f32,
-    malloc: Option<extern "C" fn(usize) -> *mut c_void>,
-    free: Option<extern "C" fn(*mut c_void)>,
-    serial_print: Option<extern "C" fn(*const c_char)>,
-) -> bool {
+    malloc: extern "C" fn(usize) -> *mut c_void,
+    free: extern "C" fn(*mut c_void),
+    serial_print: extern "C" fn(*const c_char),
+) -> TerminalInitResult {
     let font_buffer = include_bytes!(env!("FONT_PATH"));
     terminal_init_internal(
-        width,
-        height,
-        screen,
+        display,
         font_buffer.as_ptr(),
         font_buffer.len(),
         font_size,
@@ -174,23 +183,18 @@ pub unsafe extern "C" fn terminal_init(
 }
 
 #[no_mangle]
-#[allow(static_mut_refs)]
 #[cfg(not(feature = "embedded-font"))]
 pub unsafe extern "C" fn terminal_init(
-    width: usize,
-    height: usize,
-    screen: *mut u32,
+    display: *const TerminalDisplay,
     font_buffer: *const u8,
     font_buffer_size: usize,
     font_size: f32,
-    malloc: Option<extern "C" fn(usize) -> *mut c_void>,
-    free: Option<extern "C" fn(*mut c_void)>,
-    serial_print: Option<extern "C" fn(*const c_char)>,
-) -> bool {
+    malloc: extern "C" fn(usize) -> *mut c_void,
+    free: extern "C" fn(*mut c_void),
+    serial_print: extern "C" fn(*const c_char),
+) -> TerminalInitResult {
     terminal_init_internal(
-        width,
-        height,
-        screen,
+        display,
         font_buffer,
         font_buffer_size,
         font_size,
@@ -201,40 +205,37 @@ pub unsafe extern "C" fn terminal_init(
 }
 
 unsafe fn terminal_init_internal(
-    width: usize,
-    height: usize,
-    screen: *mut u32,
+    display: *const TerminalDisplay,
     font_buffer: *const u8,
     font_buffer_size: usize,
     font_size: f32,
-    malloc: Option<extern "C" fn(usize) -> *mut c_void>,
-    free: Option<extern "C" fn(*mut c_void)>,
-    serial_print: Option<extern "C" fn(*const c_char)>,
-) -> bool {
-    let buffer = from_raw_parts_mut(screen, width * height);
-
-    if malloc.is_none() || free.is_none() || font_buffer.is_null() {
-        return false;
+    malloc: extern "C" fn(usize) -> *mut c_void,
+    free: extern "C" fn(*mut c_void),
+    serial_print: extern "C" fn(*const c_char),
+) -> TerminalInitResult {
+    match (malloc as usize, free as usize, font_buffer.is_null()) {
+        (0, _, _) => return TerminalInitResult::MallocIsNull,
+        (_, 0, _) => return TerminalInitResult::FreeIsNull,
+        (_, _, true) => return TerminalInitResult::FontBufferIsNull,
+        _ => {}
     }
 
-    MALLOC = malloc;
-    FREE = free;
-    SERIAL_PRINT = serial_print;
+    MALLOC = Some(malloc);
+    FREE = Some(free);
+    SERIAL_PRINT = Some(serial_print);
 
-    let display = Display::new(width, height, buffer);
-    let mut terminal = Terminal::new(display);
+    let mut terminal: Terminal<Display> = Terminal::new((&*display).into());
 
     let font_buffer = core::slice::from_raw_parts(font_buffer, font_buffer_size);
     terminal.set_font_manager(Box::new(TrueTypeFont::new(font_size, font_buffer)));
 
-    if serial_print.is_some() {
+    if serial_print as usize != 0 {
         println!("Terminal: serial print is set!");
         terminal.set_logger(Some(|args| println!("Terminal: {:?}", args)));
     }
 
     TERMINAL.lock().replace(terminal);
-
-    true
+    TerminalInitResult::Success
 }
 
 #[no_mangle]
@@ -269,6 +270,21 @@ pub extern "C" fn terminal_advance_state(s: *const c_char) {
 pub extern "C" fn terminal_advance_state_single(c: c_char) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         terminal.advance_state(&[c as u8]);
+    }
+}
+
+#[no_mangle]
+#[allow(improper_ctypes_definitions)]
+pub extern "C" fn terminal_set_bell_handler(handler: fn()) {
+    if let Some(terminal) = TERMINAL.lock().as_mut() {
+        terminal.set_bell_handler(Some(handler));
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn terminal_set_history_size(size: usize) {
+    if let Some(terminal) = TERMINAL.lock().as_mut() {
+        terminal.set_history_size(size);
     }
 }
 

@@ -50,6 +50,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cursor-icon"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96a6ac251f4a2aca6b3f91340350eab87ae57c3f127ffeb585e92bd336717991"
+
+[[package]]
 name = "libm"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -74,10 +80,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "os-terminal"
-version = "0.4.8"
+name = "log"
+version = "0.4.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df3110e3e0713e1a889097e4a3f60bdd8ca8c281ce1af9c002a80e1f595f9a83"
+checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
+
+[[package]]
+name = "os-terminal"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c468b1fa16724b7947d668add896fed2f0d139c90ee5dccfe362b81e3f1b5dc"
 dependencies = [
  "ab_glyph",
  "bitflags",
@@ -169,6 +181,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40eb22ae96f050e0c0d6f7ce43feeae26c348fc4dea56928ca81537cfaa6188b"
 dependencies = [
  "arrayvec",
+ "bitflags",
+ "cursor-icon",
+ "log",
  "utf8parse",
  "vte_generate_state_changes",
 ]
