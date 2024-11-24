@@ -274,17 +274,24 @@ pub extern "C" fn terminal_advance_state_single(c: c_char) {
 }
 
 #[no_mangle]
-#[allow(improper_ctypes_definitions)]
-pub extern "C" fn terminal_set_bell_handler(handler: fn()) {
+pub extern "C" fn terminal_set_history_size(size: usize) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
-        terminal.set_bell_handler(Some(handler));
+        terminal.set_history_size(size);
     }
 }
 
 #[no_mangle]
-pub extern "C" fn terminal_set_history_size(size: usize) {
+pub extern "C" fn terminal_set_nature_scroll(mode: bool) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
-        terminal.set_history_size(size);
+        terminal.set_natural_scroll(mode);
+    }
+}
+
+#[no_mangle]
+#[allow(improper_ctypes_definitions)]
+pub extern "C" fn terminal_set_bell_handler(handler: fn()) {
+    if let Some(terminal) = TERMINAL.lock().as_mut() {
+        terminal.set_bell_handler(Some(handler));
     }
 }
 
