@@ -141,13 +141,9 @@ impl From<TerminalPalette> for Palette {
     fn from(palette: TerminalPalette) -> Self {
         let u32_to_rgb = |u32: u32| ((u32 >> 16) as u8, (u32 >> 8) as u8, u32 as u8);
 
-        let color_pair = (
-            u32_to_rgb(palette.foreground),
-            u32_to_rgb(palette.background),
-        );
-
         Self {
-            color_pair,
+            foreground: u32_to_rgb(palette.foreground),
+            background: u32_to_rgb(palette.background),
             ansi_colors: palette.ansi_colors.map(u32_to_rgb),
         }
     }
@@ -251,25 +247,18 @@ pub extern "C" fn terminal_flush() {
 }
 
 #[no_mangle]
-pub extern "C" fn terminal_set_auto_flush(auto_flush: usize) {
-    if let Some(terminal) = TERMINAL.lock().as_mut() {
-        terminal.set_auto_flush(auto_flush != 0);
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn terminal_advance_state(s: *const c_char) {
+pub extern "C" fn terminal_process(s: *const c_char) {
     if let Ok(s) = unsafe { CStr::from_ptr(s).to_str() } {
         if let Some(terminal) = TERMINAL.lock().as_mut() {
-            terminal.advance_state(s.as_bytes());
+            terminal.process(s.as_bytes());
         }
     }
 }
 
 #[no_mangle]
-pub extern "C" fn terminal_advance_state_single(c: c_char) {
+pub extern "C" fn terminal_process_char(c: c_char) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
-        terminal.advance_state(&[c as u8]);
+        terminal.process(&[c as u8]);
     }
 }
 
@@ -284,6 +273,13 @@ pub extern "C" fn terminal_set_history_size(size: usize) {
 pub extern "C" fn terminal_set_nature_scroll(mode: bool) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         terminal.set_natural_scroll(mode);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn terminal_set_auto_flush(auto_flush: bool) {
+    if let Some(terminal) = TERMINAL.lock().as_mut() {
+        terminal.set_auto_flush(auto_flush);
     }
 }
 
@@ -310,12 +306,14 @@ pub extern "C" fn terminal_set_custom_color_scheme(palette: TerminalPalette) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn terminal_handle_keyboard(scancode: u8, buffer: *mut c_char) -> bool {
+pub extern "C" fn terminal_handle_keyboard(scancode: u8, buffer: *mut c_char) -> bool {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         if let Some(s) = terminal.handle_keyboard(scancode) {
             let bytes = s.as_bytes();
-            copy_nonoverlapping(bytes.as_ptr(), buffer as *mut u8, bytes.len());
-            *buffer.add(bytes.len()) = 0;
+            unsafe {
+                copy_nonoverlapping(bytes.as_ptr(), buffer as *mut u8, bytes.len());
+                *buffer.add(bytes.len()) = 0;
+            }
             return true;
         }
     }
