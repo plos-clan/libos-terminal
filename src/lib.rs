@@ -306,16 +306,17 @@ pub extern "C" fn terminal_set_custom_color_scheme(palette: TerminalPalette) {
 }
 
 #[no_mangle]
-pub extern "C" fn terminal_handle_keyboard(scancode: u8, buffer: *mut c_char) -> bool {
+#[allow(static_mut_refs)]
+pub extern "C" fn terminal_handle_keyboard(scancode: u8) -> *const u8 {
+    static mut BUFFER: [u8; 8] = [0; 8];
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         if let Some(s) = terminal.handle_keyboard(scancode) {
-            let bytes = s.as_bytes();
             unsafe {
-                copy_nonoverlapping(bytes.as_ptr(), buffer as *mut u8, bytes.len());
-                *buffer.add(bytes.len()) = 0;
+                copy_nonoverlapping(s.as_ptr(), BUFFER.as_mut_ptr(), s.len());
+                *BUFFER.as_mut_ptr().add(s.len()) = 0;
+                return BUFFER.as_ptr();
             }
-            return true;
         }
     }
-    false
+    core::ptr::null()
 }
