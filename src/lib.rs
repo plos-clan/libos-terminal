@@ -137,8 +137,8 @@ pub struct TerminalPalette {
     ansi_colors: [u32; 16],
 }
 
-impl From<TerminalPalette> for Palette {
-    fn from(palette: TerminalPalette) -> Self {
+impl From<&TerminalPalette> for Palette {
+    fn from(palette: &TerminalPalette) -> Self {
         let u32_to_rgb = |u32: u32| ((u32 >> 16) as u8, (u32 >> 8) as u8, u32 as u8);
 
         Self {
@@ -299,8 +299,9 @@ pub extern "C" fn terminal_set_color_scheme(palette_index: usize) {
 }
 
 #[no_mangle]
-pub extern "C" fn terminal_set_custom_color_scheme(palette: TerminalPalette) {
+pub extern "C" fn terminal_set_custom_color_scheme(palette: *const TerminalPalette) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
+        let palette = unsafe { &*palette };
         terminal.set_custom_color_scheme(palette.into());
     }
 }
