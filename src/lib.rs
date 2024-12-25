@@ -7,11 +7,10 @@ extern crate alloc;
 
 use alloc::boxed::Box;
 use core::alloc::{GlobalAlloc, Layout};
-use core::ffi::{c_char, c_void, CStr};
+use core::ffi::{CStr, c_char, c_void};
 use core::fmt;
 use core::fmt::Write;
 use core::panic::PanicInfo;
-use core::ptr::copy_nonoverlapping;
 use core::slice::from_raw_parts_mut;
 use os_terminal::font::TrueTypeFont;
 use os_terminal::{DrawTarget, Palette, Rgb, Terminal};
@@ -36,11 +35,11 @@ struct Allocator;
 
 unsafe impl GlobalAlloc for Allocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        MALLOC.unwrap()(layout.size()) as *mut u8
+        unsafe { MALLOC.unwrap()(layout.size()) as *mut u8 }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
-        FREE.unwrap()(ptr as *mut c_void);
+        unsafe { FREE.unwrap()(ptr as *mut c_void) };
     }
 }
 
@@ -81,13 +80,13 @@ macro_rules! println {
     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 // #[linkage = "weak"]
 extern "C" fn fmaxf(x: f32, y: f32) -> f32 {
     (if x.is_nan() || x < y { y } else { x }) * 1.0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 // #[linkage = "weak"]
 extern "C" fn fminf(x: f32, y: f32) -> f32 {
     (if y.is_nan() || x < y { x } else { y }) * 1.0
@@ -157,9 +156,9 @@ pub enum TerminalInitResult {
     FontBufferIsNull,
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg(feature = "embedded-font")]
-pub unsafe extern "C" fn terminal_init(
+pub extern "C" fn terminal_init(
     display: *const TerminalDisplay,
     font_size: f32,
     malloc: extern "C" fn(usize) -> *mut c_void,
@@ -178,9 +177,9 @@ pub unsafe extern "C" fn terminal_init(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[cfg(not(feature = "embedded-font"))]
-pub unsafe extern "C" fn terminal_init(
+pub extern "C" fn terminal_init(
     display: *const TerminalDisplay,
     font_buffer: *const u8,
     font_buffer_size: usize,
@@ -200,7 +199,7 @@ pub unsafe extern "C" fn terminal_init(
     )
 }
 
-unsafe fn terminal_init_internal(
+fn terminal_init_internal(
     display: *const TerminalDisplay,
     font_buffer: *const u8,
     font_buffer_size: usize,
@@ -216,37 +215,39 @@ unsafe fn terminal_init_internal(
         _ => {}
     }
 
-    MALLOC = Some(malloc);
-    FREE = Some(free);
-    SERIAL_PRINT = Some(serial_print);
+    unsafe {
+        MALLOC = Some(malloc);
+        FREE = Some(free);
+        SERIAL_PRINT = Some(serial_print);
 
-    let mut terminal: Terminal<Display> = Terminal::new((&*display).into());
+        let mut terminal: Terminal<Display> = Terminal::new((&*display).into());
 
-    let font_buffer = core::slice::from_raw_parts(font_buffer, font_buffer_size);
-    terminal.set_font_manager(Box::new(TrueTypeFont::new(font_size, font_buffer)));
+        let font_buffer = core::slice::from_raw_parts(font_buffer, font_buffer_size);
+        terminal.set_font_manager(Box::new(TrueTypeFont::new(font_size, font_buffer)));
 
-    if serial_print as usize != 0 {
-        println!("Terminal: serial print is set!");
-        terminal.set_logger(Some(|args| println!("Terminal: {:?}", args)));
+        if serial_print as usize != 0 {
+            println!("Terminal: serial print is set!");
+            terminal.set_logger(Some(|args| println!("Terminal: {:?}", args)));
+        }
+        TERMINAL.lock().replace(terminal);
     }
 
-    TERMINAL.lock().replace(terminal);
     TerminalInitResult::Success
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn terminal_destroy() {
     TERMINAL.lock().take();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn terminal_flush() {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         terminal.flush();
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn terminal_process(s: *const c_char) {
     if let Ok(s) = unsafe { CStr::from_ptr(s).to_str() } {
         if let Some(terminal) = TERMINAL.lock().as_mut() {
@@ -255,35 +256,37 @@ pub extern "C" fn terminal_process(s: *const c_char) {
     }
 }
 
-#[no_mangle]
-pub extern "C" fn terminal_process_char(c: c_char) {
+#[unsafe(no_mangle)]
+pub extern "C" fn terminal_process_char(c: u32) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
-        terminal.process(&[c as u8]);
+        if let Some(c) = char::from_u32(c) {
+            let _ = terminal.write_char(c);
+        }
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn terminal_set_history_size(size: usize) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         terminal.set_history_size(size);
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn terminal_set_nature_scroll(mode: bool) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         terminal.set_natural_scroll(mode);
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn terminal_set_auto_flush(auto_flush: bool) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         terminal.set_auto_flush(auto_flush);
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(improper_ctypes_definitions)]
 pub extern "C" fn terminal_set_bell_handler(handler: fn()) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
@@ -291,14 +294,14 @@ pub extern "C" fn terminal_set_bell_handler(handler: fn()) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn terminal_set_color_scheme(palette_index: usize) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         terminal.set_color_scheme(palette_index);
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn terminal_set_custom_color_scheme(palette: *const TerminalPalette) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         let palette = unsafe { &*palette };
@@ -306,17 +309,20 @@ pub extern "C" fn terminal_set_custom_color_scheme(palette: *const TerminalPalet
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(static_mut_refs)]
-pub extern "C" fn terminal_handle_keyboard(scancode: u8) -> *const u8 {
+pub extern "C" fn terminal_handle_keyboard(scancode: u8) -> *const c_char {
     static mut BUFFER: [u8; 8] = [0; 8];
-    if let Some(terminal) = TERMINAL.lock().as_mut() {
-        if let Some(s) = terminal.handle_keyboard(scancode) {
-            unsafe {
-                copy_nonoverlapping(s.as_ptr(), BUFFER.as_mut_ptr(), s.len());
-                *BUFFER.as_mut_ptr().add(s.len()) = 0;
-                return BUFFER.as_ptr();
-            }
+    let result = TERMINAL
+        .lock()
+        .as_mut()
+        .and_then(|terminal| terminal.handle_keyboard(scancode));
+    if let Some(s) = result {
+        unsafe {
+            let len = s.len().min(BUFFER.len() - 1);
+            BUFFER[..len].copy_from_slice(&s.as_bytes()[..len]);
+            BUFFER[len] = 0;
+            return BUFFER.as_ptr() as *const c_char;
         }
     }
     core::ptr::null()
