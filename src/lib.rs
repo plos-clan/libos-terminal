@@ -287,6 +287,13 @@ pub extern "C" fn terminal_set_auto_flush(auto_flush: bool) {
 }
 
 #[no_mangle]
+pub extern "C" fn terminal_set_auto_crnl(auto_crnl: bool) {
+    if let Some(terminal) = TERMINAL.lock().as_mut() {
+        terminal.set_auto_crnl(auto_crnl);
+    }
+}
+
+#[no_mangle]
 #[allow(improper_ctypes_definitions)]
 pub extern "C" fn terminal_set_bell_handler(handler: fn()) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
