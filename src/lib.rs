@@ -80,13 +80,13 @@ macro_rules! println {
     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)))
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 // #[linkage = "weak"]
 extern "C" fn fmaxf(x: f32, y: f32) -> f32 {
     (if x.is_nan() || x < y { y } else { x }) * 1.0
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 // #[linkage = "weak"]
 extern "C" fn fminf(x: f32, y: f32) -> f32 {
     (if y.is_nan() || x < y { x } else { y }) * 1.0
@@ -156,7 +156,7 @@ pub enum TerminalInitResult {
     FontBufferIsNull,
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 #[cfg(feature = "embedded-font")]
 pub extern "C" fn terminal_init(
     display: *const TerminalDisplay,
@@ -177,7 +177,7 @@ pub extern "C" fn terminal_init(
     )
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 #[cfg(not(feature = "embedded-font"))]
 pub extern "C" fn terminal_init(
     display: *const TerminalDisplay,
@@ -235,19 +235,19 @@ fn terminal_init_internal(
     TerminalInitResult::Success
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 pub extern "C" fn terminal_destroy() {
     TERMINAL.lock().take();
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 pub extern "C" fn terminal_flush() {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         terminal.flush();
     }
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 pub extern "C" fn terminal_process(s: *const c_char) {
     if let Ok(s) = unsafe { CStr::from_ptr(s).to_str() } {
         if let Some(terminal) = TERMINAL.lock().as_mut() {
@@ -256,7 +256,7 @@ pub extern "C" fn terminal_process(s: *const c_char) {
     }
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 pub extern "C" fn terminal_process_char(c: u32) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         if let Some(c) = char::from_u32(c) {
@@ -265,28 +265,28 @@ pub extern "C" fn terminal_process_char(c: u32) {
     }
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 pub extern "C" fn terminal_set_history_size(size: usize) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         terminal.set_history_size(size);
     }
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 pub extern "C" fn terminal_set_nature_scroll(mode: bool) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         terminal.set_natural_scroll(mode);
     }
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 pub extern "C" fn terminal_set_auto_flush(auto_flush: bool) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         terminal.set_auto_flush(auto_flush);
     }
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 #[allow(improper_ctypes_definitions)]
 pub extern "C" fn terminal_set_bell_handler(handler: fn()) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
@@ -294,14 +294,14 @@ pub extern "C" fn terminal_set_bell_handler(handler: fn()) {
     }
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 pub extern "C" fn terminal_set_color_scheme(palette_index: usize) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         terminal.set_color_scheme(palette_index);
     }
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 pub extern "C" fn terminal_set_custom_color_scheme(palette: *const TerminalPalette) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
         let palette = unsafe { &*palette };
@@ -309,7 +309,7 @@ pub extern "C" fn terminal_set_custom_color_scheme(palette: *const TerminalPalet
     }
 }
 
-#[unsafe(no_mangle)]
+#[no_mangle]
 #[allow(static_mut_refs)]
 pub extern "C" fn terminal_handle_keyboard(scancode: u8) -> *const c_char {
     static mut BUFFER: [u8; 8] = [0; 8];
