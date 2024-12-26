@@ -257,11 +257,9 @@ pub extern "C" fn terminal_process(s: *const c_char) {
 }
 
 #[no_mangle]
-pub extern "C" fn terminal_process_char(c: u32) {
+pub extern "C" fn terminal_process_char(c: c_char) {
     if let Some(terminal) = TERMINAL.lock().as_mut() {
-        if let Some(c) = char::from_u32(c) {
-            let _ = terminal.write_char(c);
-        }
+        terminal.process(&[c as u8]);
     }
 }
 
