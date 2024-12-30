@@ -16,9 +16,6 @@ opt-level = 3
 strip = true
 codegen-units = 1
 
-[dependencies]
-spin = "0.9.8"
-
 [dependencies.os-terminal]
 version = "0.5.8"
 features = ["truetype"]
