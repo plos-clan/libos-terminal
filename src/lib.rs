@@ -2,19 +2,19 @@
 #![no_main]
 #![feature(linkage)]
 #![feature(alloc_error_handler)]
+#![allow(static_mut_refs)]
 
 extern crate alloc;
 
 use alloc::boxed::Box;
 use core::alloc::{GlobalAlloc, Layout};
-use core::ffi::{CStr, c_char, c_void};
+use core::ffi::{c_char, c_void, CStr};
 use core::fmt;
 use core::fmt::Write;
 use core::panic::PanicInfo;
 use core::slice::from_raw_parts_mut;
 use os_terminal::font::TrueTypeFont;
 use os_terminal::{DrawTarget, Palette, Rgb, Terminal};
-use spin::Mutex;
 
 #[panic_handler]
 unsafe fn panic(info: &PanicInfo) -> ! {
@@ -92,7 +92,7 @@ extern "C" fn fminf(x: f32, y: f32) -> f32 {
     (if y.is_nan() || x < y { x } else { y }) * 1.0
 }
 
-static TERMINAL: Mutex<Option<Terminal<Display>>> = Mutex::new(None);
+static mut TERMINAL: Option<Terminal<Display>> = None;
 
 pub struct Display {
     width: usize,
@@ -229,7 +229,7 @@ fn terminal_init_internal(
             println!("Terminal: serial print is set!");
             terminal.set_logger(Some(|args| println!("Terminal: {:?}", args)));
         }
-        TERMINAL.lock().replace(terminal);
+        TERMINAL.replace(terminal);
     }
 
     TerminalInitResult::Success
@@ -237,12 +237,12 @@ fn terminal_init_internal(
 
 #[no_mangle]
 pub extern "C" fn terminal_destroy() {
-    TERMINAL.lock().take();
+    unsafe { TERMINAL.take() };
 }
 
 #[no_mangle]
 pub extern "C" fn terminal_flush() {
-    if let Some(terminal) = TERMINAL.lock().as_mut() {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
         terminal.flush();
     }
 }
@@ -250,7 +250,7 @@ pub extern "C" fn terminal_flush() {
 #[no_mangle]
 pub extern "C" fn terminal_process(s: *const c_char) {
     if let Ok(s) = unsafe { CStr::from_ptr(s).to_str() } {
-        if let Some(terminal) = TERMINAL.lock().as_mut() {
+        if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
             terminal.process(s.as_bytes());
         }
     }
@@ -258,35 +258,35 @@ pub extern "C" fn terminal_process(s: *const c_char) {
 
 #[no_mangle]
 pub extern "C" fn terminal_process_char(c: c_char) {
-    if let Some(terminal) = TERMINAL.lock().as_mut() {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
         terminal.process(&[c as u8]);
     }
 }
 
 #[no_mangle]
 pub extern "C" fn terminal_set_history_size(size: usize) {
-    if let Some(terminal) = TERMINAL.lock().as_mut() {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
         terminal.set_history_size(size);
     }
 }
 
 #[no_mangle]
 pub extern "C" fn terminal_set_nature_scroll(mode: bool) {
-    if let Some(terminal) = TERMINAL.lock().as_mut() {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
         terminal.set_natural_scroll(mode);
     }
 }
 
 #[no_mangle]
 pub extern "C" fn terminal_set_auto_flush(auto_flush: bool) {
-    if let Some(terminal) = TERMINAL.lock().as_mut() {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
         terminal.set_auto_flush(auto_flush);
     }
 }
 
 #[no_mangle]
 pub extern "C" fn terminal_set_auto_crnl(auto_crnl: bool) {
-    if let Some(terminal) = TERMINAL.lock().as_mut() {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
         terminal.set_auto_crnl(auto_crnl);
     }
 }
@@ -294,36 +294,34 @@ pub extern "C" fn terminal_set_auto_crnl(auto_crnl: bool) {
 #[no_mangle]
 #[allow(improper_ctypes_definitions)]
 pub extern "C" fn terminal_set_bell_handler(handler: fn()) {
-    if let Some(terminal) = TERMINAL.lock().as_mut() {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
         terminal.set_bell_handler(Some(handler));
     }
 }
 
 #[no_mangle]
 pub extern "C" fn terminal_set_color_scheme(palette_index: usize) {
-    if let Some(terminal) = TERMINAL.lock().as_mut() {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
         terminal.set_color_scheme(palette_index);
     }
 }
 
 #[no_mangle]
 pub extern "C" fn terminal_set_custom_color_scheme(palette: *const TerminalPalette) {
-    if let Some(terminal) = TERMINAL.lock().as_mut() {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
         let palette = unsafe { &*palette };
         terminal.set_custom_color_scheme(palette.into());
     }
 }
 
 #[no_mangle]
-#[allow(static_mut_refs)]
 pub extern "C" fn terminal_handle_keyboard(scancode: u8) -> *const c_char {
     static mut BUFFER: [u8; 8] = [0; 8];
-    let result = TERMINAL
-        .lock()
-        .as_mut()
-        .and_then(|terminal| terminal.handle_keyboard(scancode));
-    if let Some(s) = result {
-        unsafe {
+    unsafe {
+        let result = TERMINAL
+            .as_mut()
+            .and_then(|terminal| terminal.handle_keyboard(scancode));
+        if let Some(s) = result {
             let len = s.len().min(BUFFER.len() - 1);
             BUFFER[..len].copy_from_slice(&s.as_bytes()[..len]);
             BUFFER[len] = 0;
