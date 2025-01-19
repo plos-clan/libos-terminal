@@ -1,6 +1,7 @@
 language = "C"
 pragma_once = true
 cpp_compat = true
+style = "type"
 usize_is_size_t = true
 sys_includes = ["stdbool.h", "stddef.h", "stdint.h"]
 no_includes = true
