@@ -17,7 +17,7 @@ strip = true
 codegen-units = 1
 
 [dependencies.os-terminal]
-version = "0.5.8"
+version = "0.5.10"
 features = ["truetype"]
 default-features = false
 
