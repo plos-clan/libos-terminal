@@ -14,7 +14,7 @@ use core::fmt::Write;
 use core::panic::PanicInfo;
 use core::slice::from_raw_parts_mut;
 use os_terminal::font::TrueTypeFont;
-use os_terminal::{DrawTarget, Palette, Rgb, Terminal};
+use os_terminal::{DrawTarget, MouseInput, Palette, Rgb, Terminal};
 
 #[panic_handler]
 unsafe fn panic(info: &PanicInfo) -> ! {
@@ -149,6 +149,12 @@ impl From<&TerminalPalette> for Palette {
 }
 
 #[repr(C)]
+pub enum TerminalMouseInput {
+    Moved(i16, i16),
+    Scroll(f32),
+}
+
+#[repr(C)]
 pub enum TerminalInitResult {
     Success,
     MallocIsNull,
@@ -278,6 +284,13 @@ pub extern "C" fn terminal_set_nature_scroll(mode: bool) {
 }
 
 #[no_mangle]
+pub extern "C" fn terminal_set_scroll_speed(speed: f32) {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
+        terminal.set_scroll_speed(speed);
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn terminal_set_auto_flush(auto_flush: bool) {
     if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
         terminal.set_auto_flush(auto_flush);
@@ -311,6 +324,20 @@ pub extern "C" fn terminal_set_custom_color_scheme(palette: *const TerminalPalet
     if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
         let palette = unsafe { &*palette };
         terminal.set_custom_color_scheme(palette.into());
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn terminal_handle_mouse_move(x: i16, y: i16) {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
+        terminal.handle_mouse(MouseInput::Moved(x, y));
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn terminal_handle_mouse_scroll(delta: f32) {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
+        terminal.handle_mouse(MouseInput::Scroll(delta));
     }
 }
 

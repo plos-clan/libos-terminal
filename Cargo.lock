@@ -86,9 +86,9 @@ checksum = "04cbf5b083de1c7e0222a7a51dbfdba1cbe1c6ab0b15e29fff3f6c077fd9cd9f"
 
 [[package]]
 name = "os-terminal"
-version = "0.5.10"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8484c503c3f36e2e73352ce58e003513db41df228ad1a534f0a238d73c63c70"
+checksum = "c2a15c1764060193b238b352d24801ecc0e6376286bb99a3a978e3b926501d4c"
 dependencies = [
  "ab_glyph",
  "bitflags",
