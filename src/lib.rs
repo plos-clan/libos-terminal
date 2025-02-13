@@ -277,13 +277,6 @@ pub extern "C" fn terminal_set_history_size(size: usize) {
 }
 
 #[no_mangle]
-pub extern "C" fn terminal_set_nature_scroll(mode: bool) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.set_natural_scroll(mode);
-    }
-}
-
-#[no_mangle]
 pub extern "C" fn terminal_set_scroll_speed(speed: f32) {
     if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
         terminal.set_scroll_speed(speed);
@@ -323,7 +316,7 @@ pub extern "C" fn terminal_set_color_scheme(palette_index: usize) {
 pub extern "C" fn terminal_set_custom_color_scheme(palette: *const TerminalPalette) {
     if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
         let palette = unsafe { &*palette };
-        terminal.set_custom_color_scheme(palette.into());
+        terminal.set_custom_color_scheme(&palette.into());
     }
 }
 
