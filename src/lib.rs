@@ -7,11 +7,13 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
+use alloc::string::String;
 use core::alloc::{GlobalAlloc, Layout};
 use core::ffi::{c_char, c_void, CStr};
 use core::fmt;
 use core::fmt::Write;
 use core::panic::PanicInfo;
+use core::ptr::copy_nonoverlapping;
 use core::slice::from_raw_parts_mut;
 use os_terminal::font::TrueTypeFont;
 use os_terminal::{DrawTarget, MouseInput, Palette, Rgb, Terminal};
@@ -277,7 +279,7 @@ pub extern "C" fn terminal_set_history_size(size: usize) {
 }
 
 #[no_mangle]
-pub extern "C" fn terminal_set_scroll_speed(speed: f32) {
+pub extern "C" fn terminal_set_scroll_speed(speed: usize) {
     if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
         terminal.set_scroll_speed(speed);
     }
@@ -320,33 +322,27 @@ pub extern "C" fn terminal_set_custom_color_scheme(palette: *const TerminalPalet
     }
 }
 
-#[no_mangle]
-pub extern "C" fn terminal_handle_mouse_move(x: i16, y: i16) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.handle_mouse(MouseInput::Moved(x, y));
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn terminal_handle_mouse_scroll(delta: f32) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.handle_mouse(MouseInput::Scroll(delta));
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn terminal_handle_keyboard(scancode: u8) -> *const c_char {
-    static mut BUFFER: [u8; 8] = [0; 8];
-    unsafe {
-        let result = TERMINAL
-            .as_mut()
-            .and_then(|terminal| terminal.handle_keyboard(scancode));
-        if let Some(s) = result {
-            let len = s.len().min(BUFFER.len() - 1);
-            BUFFER[..len].copy_from_slice(&s.as_bytes()[..len]);
-            BUFFER[len] = 0;
-            return BUFFER.as_ptr() as *const c_char;
+unsafe fn handle_input<F>(buffer: *mut u8, handler: F) -> usize
+where
+    F: FnOnce(&mut Terminal<Display>) -> Option<String>,
+{
+    TERMINAL.as_mut().and_then(handler).map_or(0, |s| {
+        if buffer.is_null() {
+            return 0;
         }
-    }
-    core::ptr::null()
+        copy_nonoverlapping(s.as_ptr(), buffer, s.len());
+        buffer.add(s.len()).write(0);
+        s.len()
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn terminal_handle_keyboard(buffer: *mut u8, scancode: u8) -> usize {
+    unsafe { handle_input(buffer, |terminal| terminal.handle_keyboard(scancode)) }
+}
+
+#[no_mangle]
+pub extern "C" fn terminal_handle_mouse_scroll(buffer: *mut u8, delta: isize) -> usize {
+    let input = MouseInput::Scroll(delta);
+    unsafe { handle_input(buffer, |terminal| terminal.handle_mouse(input)) }
 }
