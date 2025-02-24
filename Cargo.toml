@@ -1,6 +1,6 @@
 [package]
 name = "libos-terminal"
-edition = "2021"
+edition = "2024"
 
 [lib]
 name = "os_terminal"
@@ -17,7 +17,7 @@ strip = true
 codegen-units = 1
 
 [dependencies.os-terminal]
-version = "0.6.2"
+version = "0.6.4"
 features = ["truetype"]
 default-features = false
 
