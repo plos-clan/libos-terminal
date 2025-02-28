@@ -343,11 +343,11 @@ pub extern "C" fn terminal_string_free(s: *mut c_char) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn terminal_handle_keyboard(scancode: u8) -> *mut c_char {
-    unsafe { handle_input(|terminal| terminal.handle_keyboard(scancode)) }
+    unsafe { handle_input(|t| t.handle_keyboard(scancode)) }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn terminal_handle_mouse_scroll(delta: isize) -> *mut c_char {
     let input = MouseInput::Scroll(delta);
-    unsafe { handle_input(|terminal| terminal.handle_mouse(input)) }
+    unsafe { handle_input(|t| t.handle_mouse(input)) }
 }
