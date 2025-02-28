@@ -9,13 +9,13 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
+use alloc::ffi::CString;
 use alloc::string::String;
 use core::alloc::{GlobalAlloc, Layout};
-use core::ffi::{c_char, c_void, CStr};
+use core::ffi::{CStr, c_char, c_void};
 use core::fmt;
 use core::fmt::Write;
 use core::panic::PanicInfo;
-use core::ptr::copy_nonoverlapping;
 use core::slice::from_raw_parts_mut;
 use os_terminal::font::TrueTypeFont;
 use os_terminal::{DrawTarget, MouseInput, Palette, Rgb, Terminal};
@@ -324,27 +324,30 @@ pub extern "C" fn terminal_set_custom_color_scheme(palette: *const TerminalPalet
     }
 }
 
-unsafe fn handle_input<F>(buffer: *mut u8, handler: F) -> usize
+unsafe fn handle_input<F>(handler: F) -> *mut c_char
 where
     F: FnOnce(&mut Terminal<Display>) -> Option<String>,
 {
-    TERMINAL.as_mut().and_then(handler).map_or(0, |s| {
-        if buffer.is_null() {
-            return 0;
-        }
-        copy_nonoverlapping(s.as_ptr(), buffer, s.len());
-        buffer.add(s.len()).write(0);
-        s.len()
-    })
+    match TERMINAL.as_mut().and_then(handler) {
+        Some(s) => CString::new(s).unwrap().into_raw(),
+        None => core::ptr::null_mut(),
+    }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_handle_keyboard(buffer: *mut u8, scancode: u8) -> usize {
-    unsafe { handle_input(buffer, |terminal| terminal.handle_keyboard(scancode)) }
+pub extern "C" fn terminal_string_free(s: *mut c_char) {
+    if !s.is_null() {
+        unsafe { drop(CString::from_raw(s)) };
+    }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_handle_mouse_scroll(buffer: *mut u8, delta: isize) -> usize {
+pub extern "C" fn terminal_handle_keyboard(scancode: u8) -> *mut c_char {
+    unsafe { handle_input(|terminal| terminal.handle_keyboard(scancode)) }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn terminal_handle_mouse_scroll(delta: isize) -> *mut c_char {
     let input = MouseInput::Scroll(delta);
-    unsafe { handle_input(buffer, |terminal| terminal.handle_mouse(input)) }
+    unsafe { handle_input(|terminal| terminal.handle_mouse(input)) }
 }
