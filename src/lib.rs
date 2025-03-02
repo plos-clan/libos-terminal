@@ -9,7 +9,6 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use alloc::ffi::CString;
 use alloc::string::String;
 use core::alloc::{GlobalAlloc, Layout};
 use core::ffi::{CStr, c_char, c_void};
@@ -18,7 +17,8 @@ use core::fmt::Write;
 use core::panic::PanicInfo;
 use core::slice::from_raw_parts_mut;
 use os_terminal::font::TrueTypeFont;
-use os_terminal::{DrawTarget, MouseInput, Palette, Rgb, Terminal};
+use os_terminal::{ClipboardHandler, DrawTarget};
+use os_terminal::{MouseInput, Palette, Rgb, Terminal};
 
 #[panic_handler]
 unsafe fn panic(info: &PanicInfo) -> ! {
@@ -134,6 +134,24 @@ impl DrawTarget for Display {
 }
 
 #[repr(C)]
+pub struct TerminalClipboard {
+    get: extern "C" fn() -> *const c_char,
+    set: extern "C" fn(*const c_char),
+}
+
+impl ClipboardHandler for TerminalClipboard {
+    fn get_text(&mut self) -> Option<String> {
+        let s = unsafe { CStr::from_ptr((self.get)()) };
+        Some(s.to_string_lossy().into_owned())
+    }
+
+    fn set_text(&mut self, text: String) {
+        let c_str = CStr::from_bytes_with_nul(text.as_bytes());
+        (self.set)(c_str.unwrap().as_ptr());
+    }
+}
+
+#[repr(C)]
 pub struct TerminalPalette {
     foreground: u32,
     background: u32,
@@ -237,7 +255,7 @@ fn terminal_init_internal(
 
         if serial_print as usize != 0 {
             println!("Terminal: serial print is set!");
-            terminal.set_logger(Some(|args| println!("Terminal: {:?}", args)));
+            terminal.set_logger(|args| println!("Terminal: {:?}", args));
         }
         TERMINAL.replace(terminal);
     }
@@ -305,7 +323,7 @@ pub extern "C" fn terminal_set_auto_crnl(auto_crnl: bool) {
 #[allow(improper_ctypes_definitions)]
 pub extern "C" fn terminal_set_bell_handler(handler: fn()) {
     if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.set_bell_handler(Some(handler));
+        terminal.set_bell_handler(handler);
     }
 }
 
@@ -324,30 +342,30 @@ pub extern "C" fn terminal_set_custom_color_scheme(palette: *const TerminalPalet
     }
 }
 
-unsafe fn handle_input<F>(handler: F) -> *mut c_char
-where
-    F: FnOnce(&mut Terminal<Display>) -> Option<String>,
-{
-    match TERMINAL.as_mut().and_then(handler) {
-        Some(s) => CString::new(s).unwrap().into_raw(),
-        None => core::ptr::null_mut(),
+#[unsafe(no_mangle)]
+pub extern "C" fn terminal_set_clipboard(clipboard: TerminalClipboard) {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
+        terminal.set_clipboard(Box::new(clipboard));
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_string_free(s: *mut c_char) {
-    if !s.is_null() {
-        unsafe { drop(CString::from_raw(s)) };
+pub extern "C" fn terminal_set_pty_writer(writer: extern "C" fn(*const u8)) {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
+        terminal.set_pty_writer(Box::new(move |s| writer(s.as_ptr())));
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_handle_keyboard(scancode: u8) -> *mut c_char {
-    unsafe { handle_input(|t| t.handle_keyboard(scancode)) }
+pub extern "C" fn terminal_handle_keyboard(scancode: u8) {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
+        terminal.handle_keyboard(scancode);
+    }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_handle_mouse_scroll(delta: isize) -> *mut c_char {
-    let input = MouseInput::Scroll(delta);
-    unsafe { handle_input(|t| t.handle_mouse(input)) }
+pub extern "C" fn terminal_handle_mouse_scroll(delta: isize) {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
+        terminal.handle_mouse(MouseInput::Scroll(delta));
+    }
 }
