@@ -12,10 +12,9 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use core::alloc::{GlobalAlloc, Layout};
 use core::ffi::{CStr, c_char, c_void};
-use core::fmt;
 use core::fmt::Write;
 use core::panic::PanicInfo;
-use core::slice::from_raw_parts_mut;
+use core::{fmt, slice};
 use os_terminal::font::TrueTypeFont;
 use os_terminal::{ClipboardHandler, DrawTarget};
 use os_terminal::{MouseInput, Palette, Rgb, Terminal};
@@ -23,7 +22,6 @@ use os_terminal::{MouseInput, Palette, Rgb, Terminal};
 #[panic_handler]
 unsafe fn panic(info: &PanicInfo) -> ! {
     println!("panicked: {}", info.message());
-    terminal_destroy();
     loop {}
 }
 
@@ -56,11 +54,17 @@ struct Print;
 impl Write for Print {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         if let Some(serial_print) = unsafe { SERIAL_PRINT } {
-            let mut buffer = [0u8; 1024];
-            buffer[..s.len()].copy_from_slice(s.as_bytes());
-            buffer[s.len()] = 0;
-            let c_str = CStr::from_bytes_until_nul(&buffer).unwrap();
-            serial_print(c_str.as_ptr());
+            static mut BUFFER: [u8; 1024] = [0u8; 1024];
+            let bytes = s.as_bytes();
+            let max_len = unsafe { BUFFER.len() - 1 };
+
+            for chunk in bytes.chunks(max_len) {
+                unsafe {
+                    BUFFER[..chunk.len()].copy_from_slice(chunk);
+                    BUFFER[chunk.len()] = 0;
+                    serial_print(BUFFER.as_ptr() as *const c_char);
+                }
+            }
         }
         Ok(())
     }
@@ -101,14 +105,14 @@ static mut TERMINAL: Option<Terminal<Display>> = None;
 pub struct Display {
     width: usize,
     height: usize,
-    buffer: &'static mut [u32],
+    pixel_writer: fn(usize, usize, u32),
 }
 
 #[repr(C)]
 pub struct TerminalDisplay {
     width: usize,
     height: usize,
-    address: *mut u32,
+    pixel_writer: fn(usize, usize, u32),
 }
 
 impl From<&TerminalDisplay> for Display {
@@ -116,7 +120,7 @@ impl From<&TerminalDisplay> for Display {
         Self {
             width: info.width,
             height: info.height,
-            buffer: unsafe { from_raw_parts_mut(info.address, info.width * info.height) },
+            pixel_writer: info.pixel_writer,
         }
     }
 }
@@ -128,8 +132,8 @@ impl DrawTarget for Display {
 
     #[inline(always)]
     fn draw_pixel(&mut self, x: usize, y: usize, color: Rgb) {
-        let value = (color.0 as u32) << 16 | (color.1 as u32) << 8 | color.2 as u32;
-        self.buffer[y * self.width + x] = value;
+        let color = (color.0 as u32) << 16 | (color.1 as u32) << 8 | color.2 as u32;
+        (self.pixel_writer)(x, y, color);
     }
 }
 
@@ -160,7 +164,9 @@ pub struct TerminalPalette {
 
 impl From<&TerminalPalette> for Palette {
     fn from(palette: &TerminalPalette) -> Self {
-        let u32_to_rgb = |u32: u32| ((u32 >> 16) as u8, (u32 >> 8) as u8, u32 as u8);
+        const fn u32_to_rgb(val: u32) -> Rgb {
+            ((val >> 16) as u8, (val >> 8) as u8, val as u8)
+        }
 
         Self {
             foreground: u32_to_rgb(palette.foreground),
@@ -248,9 +254,9 @@ fn terminal_init_internal(
         FREE = Some(free);
         SERIAL_PRINT = Some(serial_print);
 
-        let mut terminal: Terminal<Display> = Terminal::new((&*display).into());
+        let mut terminal = Terminal::new((&*display).into());
 
-        let font_buffer = core::slice::from_raw_parts(font_buffer, font_buffer_size);
+        let font_buffer = slice::from_raw_parts(font_buffer, font_buffer_size);
         terminal.set_font_manager(Box::new(TrueTypeFont::new(font_size, font_buffer)));
 
         if serial_print as usize != 0 {
@@ -313,9 +319,9 @@ pub extern "C" fn terminal_set_auto_flush(auto_flush: bool) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_set_auto_crnl(auto_crnl: bool) {
+pub extern "C" fn terminal_set_crnl_mapping(auto_crnl: bool) {
     if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.set_auto_crnl(auto_crnl);
+        terminal.set_crnl_mapping(auto_crnl);
     }
 }
 
@@ -323,7 +329,7 @@ pub extern "C" fn terminal_set_auto_crnl(auto_crnl: bool) {
 #[allow(improper_ctypes_definitions)]
 pub extern "C" fn terminal_set_bell_handler(handler: fn()) {
     if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.set_bell_handler(handler);
+        terminal.set_bell_handler(handler as fn());
     }
 }
 
