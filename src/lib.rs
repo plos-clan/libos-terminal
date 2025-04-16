@@ -100,28 +100,62 @@ extern "C" fn fminf(x: f32, y: f32) -> f32 {
     (if y.is_nan() || x < y { x } else { y }) * 1.0
 }
 
+type Shifts = (u8, u8, u8);
+
 static mut TERMINAL: Option<Terminal<Display>> = None;
 
 pub struct Display {
     width: usize,
     height: usize,
-    pixel_writer: fn(usize, usize, u32),
+    stride: usize,
+    buffer: *mut u32,
+    shifts: Shifts,
+    convert_color: fn(Shifts, Rgb) -> u32,
 }
 
 #[repr(C)]
 pub struct TerminalDisplay {
     width: usize,
     height: usize,
-    pixel_writer: fn(usize, usize, u32),
+    buffer: *mut u32,
+    pitch: usize,
+    red_mask_size: u8,
+    red_mask_shift: u8,
+    green_mask_size: u8,
+    green_mask_shift: u8,
+    blue_mask_size: u8,
+    blue_mask_shift: u8,
 }
 
-impl From<&TerminalDisplay> for Display {
-    fn from(info: &TerminalDisplay) -> Self {
-        Self {
+impl Display {
+    fn from(info: &TerminalDisplay) -> Option<Self> {
+        if info.red_mask_size < 8
+            || info.red_mask_size != info.green_mask_size
+            || info.red_mask_size != info.blue_mask_size
+        {
+            return None;
+        }
+
+        let shifts = (
+            info.red_mask_shift + (info.red_mask_size - 8),
+            info.green_mask_shift + (info.green_mask_size - 8),
+            info.blue_mask_shift + (info.blue_mask_size - 8),
+        );
+
+        let convert_color = |shifts: Shifts, color: Rgb| {
+            ((color.0 as u32) << shifts.0)
+                | ((color.1 as u32) << shifts.1)
+                | ((color.2 as u32) << shifts.2)
+        };
+
+        Some(Self {
+            shifts,
+            convert_color,
             width: info.width,
             height: info.height,
-            pixel_writer: info.pixel_writer,
-        }
+            buffer: info.buffer,
+            stride: info.pitch / size_of::<u32>(),
+        })
     }
 }
 
@@ -132,8 +166,8 @@ impl DrawTarget for Display {
 
     #[inline(always)]
     fn draw_pixel(&mut self, x: usize, y: usize, color: Rgb) {
-        let color = (color.0 as u32) << 16 | (color.1 as u32) << 8 | color.2 as u32;
-        (self.pixel_writer)(x, y, color);
+        let color = (self.convert_color)(self.shifts, color);
+        unsafe { self.buffer.add(y * self.stride + x).write(color) }
     }
 }
 
@@ -188,6 +222,7 @@ pub enum TerminalInitResult {
     MallocIsNull,
     FreeIsNull,
     FontBufferIsNull,
+    InvalidDisplayInfo,
 }
 
 #[unsafe(no_mangle)]
@@ -254,7 +289,11 @@ fn terminal_init_internal(
         FREE = Some(free);
         SERIAL_PRINT = Some(serial_print);
 
-        let mut terminal = Terminal::new((&*display).into());
+        let Some(display) = Display::from(&*display) else {
+            return TerminalInitResult::InvalidDisplayInfo;
+        };
+
+        let mut terminal = Terminal::new(display);
 
         let font_buffer = slice::from_raw_parts(font_buffer, font_buffer_size);
         terminal.set_font_manager(Box::new(TrueTypeFont::new(font_size, font_buffer)));
