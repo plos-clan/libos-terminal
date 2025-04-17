@@ -128,18 +128,11 @@ pub struct TerminalDisplay {
 }
 
 impl Display {
-    fn from(info: &TerminalDisplay) -> Option<Self> {
-        if info.red_mask_size < 8
-            || info.red_mask_size != info.green_mask_size
-            || info.red_mask_size != info.blue_mask_size
-        {
-            return None;
-        }
-
+    fn from(info: &TerminalDisplay) -> Self {
         let shifts = (
-            info.red_mask_shift + (info.red_mask_size - 8),
-            info.green_mask_shift + (info.green_mask_size - 8),
-            info.blue_mask_shift + (info.blue_mask_size - 8),
+            info.red_mask_shift + info.red_mask_size - 8,
+            info.green_mask_shift + info.green_mask_size - 8,
+            info.blue_mask_shift + info.blue_mask_size - 8,
         );
 
         let convert_color = |shifts: Shifts, color: Rgb| {
@@ -148,14 +141,14 @@ impl Display {
                 | ((color.2 as u32) << shifts.2)
         };
 
-        Some(Self {
+        Self {
             shifts,
             convert_color,
             width: info.width,
             height: info.height,
             buffer: info.buffer,
             stride: info.pitch / size_of::<u32>(),
-        })
+        }
     }
 }
 
@@ -222,7 +215,6 @@ pub enum TerminalInitResult {
     MallocIsNull,
     FreeIsNull,
     FontBufferIsNull,
-    InvalidDisplayInfo,
 }
 
 #[unsafe(no_mangle)]
@@ -289,14 +281,11 @@ fn terminal_init_internal(
         FREE = Some(free);
         SERIAL_PRINT = Some(serial_print);
 
-        let Some(display) = Display::from(&*display) else {
-            return TerminalInitResult::InvalidDisplayInfo;
-        };
-
-        let mut terminal = Terminal::new(display);
+        let mut terminal = Terminal::new(Display::from(&*display));
 
         let font_buffer = slice::from_raw_parts(font_buffer, font_buffer_size);
-        terminal.set_font_manager(Box::new(TrueTypeFont::new(font_size, font_buffer)));
+        let truetype_font = Box::new(TrueTypeFont::new(font_size, font_buffer));
+        terminal.set_font_manager(truetype_font);
 
         if serial_print as usize != 0 {
             println!("Terminal: serial print is set!");
