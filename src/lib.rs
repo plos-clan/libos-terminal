@@ -191,7 +191,6 @@ pub extern "C" fn terminal_init(
         font_size,
         malloc,
         free,
-        serial_print,
     )
 }
 
