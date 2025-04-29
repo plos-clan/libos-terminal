@@ -9,6 +9,7 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
+use alloc::ffi::CString;
 use alloc::string::String;
 use core::alloc::{GlobalAlloc, Layout};
 use core::ffi::{CStr, c_char, c_void};
@@ -274,6 +275,20 @@ pub extern "C" fn terminal_process_char(c: c_char) {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn terminal_handle_keyboard(scancode: u8) {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
+        terminal.handle_keyboard(scancode);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn terminal_handle_mouse_scroll(delta: isize) {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
+        terminal.handle_mouse(MouseInput::Scroll(delta));
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn terminal_set_history_size(size: usize) {
     if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
         terminal.set_history_size(size);
@@ -334,20 +349,10 @@ pub extern "C" fn terminal_set_clipboard(clipboard: TerminalClipboard) {
 #[unsafe(no_mangle)]
 pub extern "C" fn terminal_set_pty_writer(writer: extern "C" fn(*const u8)) {
     if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.set_pty_writer(Box::new(move |s| writer(s.as_ptr())));
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn terminal_handle_keyboard(scancode: u8) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.handle_keyboard(scancode);
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn terminal_handle_mouse_scroll(delta: isize) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.handle_mouse(MouseInput::Scroll(delta));
+        terminal.set_pty_writer(Box::new(move |s| {
+            if let Ok(s) = CString::new(s) {
+                writer(s.as_ptr() as *const u8);
+            }
+        }));
     }
 }
