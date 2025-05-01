@@ -268,9 +268,9 @@ pub extern "C" fn terminal_process(s: *const c_char) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_process_char(c: c_char) {
+pub extern "C" fn terminal_process_byte(c: u8) {
     if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.process(&[c as u8]);
+        terminal.process(&[c]);
     }
 }
 

@@ -22,16 +22,11 @@ jobs:
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         toolchain: nightly
-        override: true
-
-    - name: Add x86_64-unknown-none target
-      run: rustup target add x86_64-unknown-none
+        target: x86_64-unknown-none
+        components: rust-src
 
     - name: Install cbindgen
       run: cargo install cbindgen
-
-    - name: Add rust-src component
-      run: rustup component add rust-src
 
     - name: Build general release
       run: |
@@ -51,11 +46,15 @@ jobs:
     - name: Generate header
       run: cbindgen --output os_terminal.h
 
+    - name: Get current date
+      id: date
+      run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+
     - name: Release artifacts
       uses: softprops/action-gh-release@v2
       with:
-        name: Nightly build
-        tag_name: release
+        name: ${{ steps.date.outputs.date }}
+        tag_name: ${{ steps.date.outputs.date }}
         files: |
           libos_terminal-x86_64.a
           libos_terminal-i686.a
