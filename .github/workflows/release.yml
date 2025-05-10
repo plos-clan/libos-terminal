@@ -26,7 +26,9 @@ jobs:
         components: rust-src
 
     - name: Install cbindgen
-      run: cargo install cbindgen
+      uses: baptiste0928/cargo-install@v3
+      with:
+        crate: cbindgen
 
     - name: Build general release
       run: |
