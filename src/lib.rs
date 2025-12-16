@@ -56,13 +56,13 @@ fn alloc_error_handler(_layout: Layout) -> ! {
 #[unsafe(no_mangle)]
 // #[linkage = "weak"]
 extern "C" fn fmaxf(x: f32, y: f32) -> f32 {
-    x.max(y)
+    (if x.is_nan() || x < y { y } else { x }) * 1.0
 }
 
 #[unsafe(no_mangle)]
 // #[linkage = "weak"]
 extern "C" fn fminf(x: f32, y: f32) -> f32 {
-    x.min(y)
+    (if y.is_nan() || x < y { x } else { y }) * 1.0
 }
 
 pub struct Display {
