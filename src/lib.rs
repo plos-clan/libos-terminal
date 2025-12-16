@@ -344,6 +344,6 @@ pub extern "C" fn terminal_set_color_scheme(terminal: *mut c_void, palette_index
 #[unsafe(no_mangle)]
 pub extern "C" fn terminal_set_bell_handler(terminal: *mut c_void, handler: extern "C" fn()) {
     with_terminal!(terminal, t => {
-        t.set_bell_handler(unsafe { core::mem::transmute(handler) });
+        t.set_bell_handler(Box::new(move || handler()));
     });
 }
