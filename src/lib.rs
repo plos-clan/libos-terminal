@@ -90,16 +90,20 @@ pub struct TerminalDisplay {
 }
 
 impl DrawTarget for Display {
+    #[inline]
     fn size(&self) -> (usize, usize) {
         (self.width, self.height)
     }
 
-    #[inline(always)]
-    fn draw_pixel(&mut self, x: usize, y: usize, color: Rgb) {
-        let pixel = ((color.0 as u32) << self.r_shift)
-            | ((color.1 as u32) << self.g_shift)
-            | ((color.2 as u32) << self.b_shift);
+    #[inline]
+    fn rgb_to_pixel(&self, rgb: Rgb) -> u32 {
+        ((rgb.0 as u32) << self.r_shift)
+            | ((rgb.1 as u32) << self.g_shift)
+            | ((rgb.2 as u32) << self.b_shift)
+    }
 
+    #[inline]
+    fn draw_pixel(&mut self, x: usize, y: usize, pixel: u32) {
         unsafe { *self.buffer.add(y * self.stride + x) = pixel };
     }
 }
