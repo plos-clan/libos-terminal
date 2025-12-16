@@ -9,7 +9,6 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use alloc::ffi::CString;
 use alloc::string::String;
 use core::alloc::{GlobalAlloc, Layout};
 use core::ffi::{CStr, c_char, c_void};
@@ -29,7 +28,7 @@ static ALLOCATOR: Allocator = Allocator;
 
 #[alloc_error_handler]
 fn alloc_error_handler(_layout: Layout) -> ! {
-    loop {}
+    panic!();
 }
 
 struct Allocator;
@@ -260,10 +259,10 @@ pub extern "C" fn terminal_flush() {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn terminal_process(s: *const c_char) {
-    if let Ok(s) = unsafe { CStr::from_ptr(s).to_str() } {
-        if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-            terminal.process(s.as_bytes());
-        }
+    if let Ok(s) = unsafe { CStr::from_ptr(s).to_str() }
+        && let Some(terminal) = unsafe { TERMINAL.as_mut() }
+    {
+        terminal.process(s.as_bytes());
     }
 }
 
@@ -292,6 +291,13 @@ pub extern "C" fn terminal_handle_mouse_scroll(delta: isize) {
 pub extern "C" fn terminal_set_history_size(size: usize) {
     if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
         terminal.set_history_size(size);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn terminal_set_color_cache_size(size: usize) {
+    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
+        terminal.set_color_cache_size(size);
     }
 }
 
@@ -347,12 +353,11 @@ pub extern "C" fn terminal_set_clipboard(clipboard: TerminalClipboard) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_set_pty_writer(writer: extern "C" fn(*const u8)) {
+pub extern "C" fn terminal_set_pty_writer(writer: extern "C" fn(*const u8, usize)) {
     if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.set_pty_writer(Box::new(move |s| {
-            if let Ok(s) = CString::new(s) {
-                writer(s.as_ptr() as *const u8);
-            }
-        }));
+        let callback = move |s: &str| {
+            writer(s.as_ptr(), s.len());
+        };
+        terminal.set_pty_writer(Box::new(callback));
     }
 }
