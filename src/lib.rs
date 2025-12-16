@@ -9,6 +9,7 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
+use alloc::ffi::CString;
 use alloc::string::String;
 use core::alloc::{GlobalAlloc, Layout};
 use core::ffi::{CStr, c_char, c_void};
@@ -60,15 +61,12 @@ extern "C" fn fminf(x: f32, y: f32) -> f32 {
 
 type Shifts = (u8, u8, u8);
 
-static mut TERMINAL: Option<Terminal<Display>> = None;
-
 pub struct Display {
     width: usize,
     height: usize,
     stride: usize,
     buffer: *mut u32,
     shifts: Shifts,
-    convert_color: fn(Shifts, Rgb) -> u32,
 }
 
 #[repr(C)]
@@ -93,15 +91,8 @@ impl Display {
             info.blue_mask_shift + info.blue_mask_size - 8,
         );
 
-        let convert_color = |shifts: Shifts, color: Rgb| {
-            ((color.0 as u32) << shifts.0)
-                | ((color.1 as u32) << shifts.1)
-                | ((color.2 as u32) << shifts.2)
-        };
-
         Self {
             shifts,
-            convert_color,
             width: info.width,
             height: info.height,
             buffer: info.buffer,
@@ -117,8 +108,12 @@ impl DrawTarget for Display {
 
     #[inline(always)]
     fn draw_pixel(&mut self, x: usize, y: usize, color: Rgb) {
-        let color = (self.convert_color)(self.shifts, color);
-        unsafe { self.buffer.add(y * self.stride + x).write(color) }
+        let (r_shift, g_shift, b_shift) = self.shifts;
+        let pixel = ((color.0 as u32) << r_shift)
+            | ((color.1 as u32) << g_shift)
+            | ((color.2 as u32) << b_shift);
+
+        unsafe { *self.buffer.add(y * self.stride + x) = pixel };
     }
 }
 
@@ -130,13 +125,18 @@ pub struct TerminalClipboard {
 
 impl ClipboardHandler for TerminalClipboard {
     fn get_text(&mut self) -> Option<String> {
-        let s = unsafe { CStr::from_ptr((self.get)()) };
+        let ptr = (self.get)();
+        if ptr.is_null() {
+            return None;
+        }
+        let s = unsafe { CStr::from_ptr(ptr) };
         Some(s.to_string_lossy().into_owned())
     }
 
     fn set_text(&mut self, text: String) {
-        let c_str = CStr::from_bytes_with_nul(text.as_bytes());
-        (self.set)(c_str.unwrap().as_ptr());
+        if let Ok(c_string) = CString::new(text) {
+            (self.set)(c_string.as_ptr());
+        }
     }
 }
 
@@ -167,24 +167,16 @@ pub enum TerminalMouseInput {
     Scroll(f32),
 }
 
-#[repr(C)]
-pub enum TerminalInitResult {
-    Success,
-    MallocIsNull,
-    FreeIsNull,
-    FontBufferIsNull,
-}
-
 #[unsafe(no_mangle)]
 #[cfg(feature = "embedded-font")]
-pub extern "C" fn terminal_init(
+pub extern "C" fn terminal_new(
     display: *const TerminalDisplay,
     font_size: f32,
     malloc: extern "C" fn(usize) -> *mut c_void,
     free: extern "C" fn(*mut c_void),
-) -> TerminalInitResult {
+) -> *mut c_void {
     let font_buffer = include_bytes!(env!("FONT_PATH"));
-    terminal_init_internal(
+    terminal_new_internal(
         display,
         font_buffer.as_ptr(),
         font_buffer.len(),
@@ -196,15 +188,15 @@ pub extern "C" fn terminal_init(
 
 #[unsafe(no_mangle)]
 #[cfg(not(feature = "embedded-font"))]
-pub extern "C" fn terminal_init(
+pub extern "C" fn terminal_new(
     display: *const TerminalDisplay,
     font_buffer: *const u8,
     font_buffer_size: usize,
     font_size: f32,
     malloc: extern "C" fn(usize) -> *mut c_void,
     free: extern "C" fn(*mut c_void),
-) -> TerminalInitResult {
-    terminal_init_internal(
+) -> *mut c_void {
+    terminal_new_internal(
         display,
         font_buffer,
         font_buffer_size,
@@ -214,19 +206,16 @@ pub extern "C" fn terminal_init(
     )
 }
 
-fn terminal_init_internal(
+fn terminal_new_internal(
     display: *const TerminalDisplay,
     font_buffer: *const u8,
     font_buffer_size: usize,
     font_size: f32,
     malloc: extern "C" fn(usize) -> *mut c_void,
     free: extern "C" fn(*mut c_void),
-) -> TerminalInitResult {
-    match (malloc as usize, free as usize, font_buffer.is_null()) {
-        (0, _, _) => return TerminalInitResult::MallocIsNull,
-        (_, 0, _) => return TerminalInitResult::FreeIsNull,
-        (_, _, true) => return TerminalInitResult::FontBufferIsNull,
-        _ => {}
+) -> *mut c_void {
+    if malloc as usize == 0 || free as usize == 0 || font_buffer.is_null() || display.is_null() {
+        return core::ptr::null_mut();
     }
 
     unsafe {
@@ -239,125 +228,122 @@ fn terminal_init_internal(
         let truetype_font = Box::new(TrueTypeFont::new(font_size, font_buffer));
         terminal.set_font_manager(truetype_font);
 
-        TERMINAL.replace(terminal);
-    }
-
-    TerminalInitResult::Success
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn terminal_destroy() {
-    unsafe { TERMINAL.take() };
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn terminal_flush() {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.flush();
+        Box::into_raw(Box::new(terminal)) as *mut c_void
     }
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_process(s: *const c_char) {
-    if let Ok(s) = unsafe { CStr::from_ptr(s).to_str() }
-        && let Some(terminal) = unsafe { TERMINAL.as_mut() }
-    {
-        terminal.process(s.as_bytes());
+pub extern "C" fn terminal_destroy(terminal: *mut c_void) {
+    if terminal.is_null() {
+        return;
+    }
+    unsafe {
+        let _ = Box::from_raw(terminal as *mut Terminal<Display>);
     }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn terminal_process_byte(c: u8) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.process(&[c]);
-    }
+macro_rules! with_terminal {
+    ($ptr:expr, $term:ident => $block:block) => {
+        if !$ptr.is_null() {
+            let $term = unsafe { &mut *($ptr as *mut Terminal<Display>) };
+            $block
+        }
+    };
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_handle_keyboard(scancode: u8) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.handle_keyboard(scancode);
-    }
+pub extern "C" fn terminal_flush(terminal: *mut c_void) {
+    with_terminal!(terminal, t => { t.flush(); });
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_handle_mouse_scroll(delta: isize) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.handle_mouse(MouseInput::Scroll(delta));
-    }
+pub extern "C" fn terminal_process(terminal: *mut c_void, s: *const c_char) {
+    with_terminal!(terminal, t => {
+        if let Ok(s) = unsafe { CStr::from_ptr(s).to_str() } {
+            t.process(s.as_bytes());
+        }
+    });
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_set_history_size(size: usize) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.set_history_size(size);
-    }
+pub extern "C" fn terminal_process_byte(terminal: *mut c_void, c: u8) {
+    with_terminal!(terminal, t => { t.process(&[c]); });
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_set_color_cache_size(size: usize) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.set_color_cache_size(size);
-    }
+pub extern "C" fn terminal_handle_keyboard(terminal: *mut c_void, scancode: u8) {
+    with_terminal!(terminal, t => { t.handle_keyboard(scancode); });
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_set_scroll_speed(speed: usize) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.set_scroll_speed(speed);
-    }
+pub extern "C" fn terminal_handle_mouse_scroll(terminal: *mut c_void, delta: isize) {
+    with_terminal!(terminal, t => { t.handle_mouse(MouseInput::Scroll(delta)); });
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_set_auto_flush(auto_flush: bool) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.set_auto_flush(auto_flush);
-    }
+pub extern "C" fn terminal_set_history_size(terminal: *mut c_void, size: usize) {
+    with_terminal!(terminal, t => { t.set_history_size(size); });
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_set_crnl_mapping(auto_crnl: bool) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.set_crnl_mapping(auto_crnl);
-    }
+pub extern "C" fn terminal_set_color_cache_size(terminal: *mut c_void, size: usize) {
+    with_terminal!(terminal, t => { t.set_color_cache_size(size); });
 }
 
 #[unsafe(no_mangle)]
-#[allow(improper_ctypes_definitions)]
-pub extern "C" fn terminal_set_bell_handler(handler: fn()) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.set_bell_handler(handler as fn());
-    }
+pub extern "C" fn terminal_set_scroll_speed(terminal: *mut c_void, speed: usize) {
+    with_terminal!(terminal, t => { t.set_scroll_speed(speed); });
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_set_color_scheme(palette_index: usize) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.set_color_scheme(palette_index);
-    }
+pub extern "C" fn terminal_set_auto_flush(terminal: *mut c_void, auto_flush: bool) {
+    with_terminal!(terminal, t => { t.set_auto_flush(auto_flush); });
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_set_custom_color_scheme(palette: *const TerminalPalette) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
+pub extern "C" fn terminal_set_crnl_mapping(terminal: *mut c_void, auto_crnl: bool) {
+    with_terminal!(terminal, t => { t.set_crnl_mapping(auto_crnl); });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn terminal_set_custom_color_scheme(
+    terminal: *mut c_void,
+    palette: *const TerminalPalette,
+) {
+    with_terminal!(terminal, t => {
         let palette = unsafe { &*palette };
-        terminal.set_custom_color_scheme(&palette.into());
-    }
+        t.set_custom_color_scheme(&palette.into());
+    });
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_set_clipboard(clipboard: TerminalClipboard) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
-        terminal.set_clipboard(Box::new(clipboard));
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn terminal_set_pty_writer(writer: extern "C" fn(*const u8, usize)) {
-    if let Some(terminal) = unsafe { TERMINAL.as_mut() } {
+pub extern "C" fn terminal_set_pty_writer(
+    terminal: *mut c_void,
+    writer: extern "C" fn(*const u8, usize),
+) {
+    with_terminal!(terminal, t => {
         let callback = move |s: &str| {
             writer(s.as_ptr(), s.len());
         };
-        terminal.set_pty_writer(Box::new(callback));
-    }
+        t.set_pty_writer(Box::new(callback));
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn terminal_set_clipboard(terminal: *mut c_void, clipboard: TerminalClipboard) {
+    with_terminal!(terminal, t => {
+        t.set_clipboard(Box::new(clipboard));
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn terminal_set_color_scheme(terminal: *mut c_void, palette_index: usize) {
+    with_terminal!(terminal, t => { t.set_color_scheme(palette_index); });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn terminal_set_bell_handler(terminal: *mut c_void, handler: extern "C" fn()) {
+    with_terminal!(terminal, t => {
+        t.set_bell_handler(unsafe { core::mem::transmute(handler) });
+    });
 }
