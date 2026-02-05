@@ -1,6 +1,7 @@
 [unstable]
 build-std = ["core", "alloc"]
 build-std-features = ["optimize_for_size"]
+json-target-spec = true
 
 [build]
 rustflags = [

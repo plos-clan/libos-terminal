@@ -18,13 +18,6 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Set up Rust
-      uses: actions-rust-lang/setup-rust-toolchain@v1
-      with:
-        toolchain: nightly
-        target: x86_64-unknown-none
-        components: rust-src
-
     - name: Install cbindgen
       uses: baptiste0928/cargo-install@v3
       with:
