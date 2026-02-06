@@ -206,6 +206,28 @@ pub extern "C" fn terminal_destroy(terminal: *mut c_void) {
     }
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn terminal_rows(terminal: *mut c_void) -> usize {
+    if terminal.is_null() {
+        return 0;
+    }
+    unsafe {
+        let terminal = Box::from_raw(terminal as *mut Terminal<Display>);
+        terminal.rows()
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn terminal_columns(terminal: *mut c_void) -> usize {
+    if terminal.is_null() {
+        return 0;
+    }
+    unsafe {
+        let terminal = Box::from_raw(terminal as *mut Terminal<Display>);
+        terminal.columns()
+    }
+}
+
 macro_rules! with_terminal {
     ($ptr:expr, $term:ident => $block:block) => {
         if !$ptr.is_null() {
