@@ -158,8 +158,8 @@ unsafe fn terminal_new_impl(
     };
 
     let mut terminal = Terminal::new(display);
-    let font = Box::new(TrueTypeFont::new(font_size, font_bytes));
-    terminal.set_font_manager(font);
+    let font_manager = TrueTypeFont::new(font_size, font_bytes).with_subpixel(true);
+    terminal.set_font_manager(Box::new(font_manager));
 
     Box::into_raw(Box::new(terminal)) as *mut c_void
 }

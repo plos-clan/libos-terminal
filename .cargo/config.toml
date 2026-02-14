@@ -10,4 +10,10 @@ rustflags = [
   "-Zunstable-options",
   "-Cpanic=immediate-abort",
 ]
-target = ["i686-unknown-none.json", "x86_64-unknown-none"]
+target = [
+  "x86_64-unknown-none",
+  "i686-unknown-none.json",
+  "aarch64-unknown-none-softfloat",
+  "riscv64imac-unknown-none-elf",
+  "loongarch64-unknown-none-softfloat"
+]

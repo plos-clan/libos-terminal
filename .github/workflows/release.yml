@@ -5,7 +5,7 @@ permissions:
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
     paths-ignore:
       - 'README.md'
       - '.gitignore'
@@ -23,20 +23,28 @@ jobs:
       with:
         crate: cbindgen
 
-    - name: Build general release
+    - name: Build release
       run: |
         cargo build --release
         mv target/x86_64-unknown-none/release/libos_terminal.a libos_terminal-x86_64.a
         mv target/i686-unknown-none/release/libos_terminal.a libos_terminal-i686.a
+        mv target/aarch64-unknown-none-softfloat/release/libos_terminal.a libos_terminal-aarch64.a
+        mv target/riscv64imac-unknown-none-elf/release/libos_terminal.a libos_terminal-riscv64.a
+        mv target/loongarch64-unknown-none-softfloat/release/libos_terminal.a libos_terminal-loongarch64.a
 
-    - name: Build embedded-font release
-      run: |
         FONT_PATH="../fonts/SourceCodePro.otf" cargo build --release --features embedded-font
         mv target/x86_64-unknown-none/release/libos_terminal.a libos_terminal-embedfont-x86_64.a
         mv target/i686-unknown-none/release/libos_terminal.a libos_terminal-embedfont-i686.a
+        mv target/aarch64-unknown-none-softfloat/release/libos_terminal.a libos_terminal-embedfont-aarch64.a
+        mv target/riscv64imac-unknown-none-elf/release/libos_terminal.a libos_terminal-embedfont-riscv64.a
+        mv target/loongarch64-unknown-none-softfloat/release/libos_terminal.a libos_terminal-embedfont-loongarch64.a
+
         FONT_PATH="../fonts/FiraCodeNotoSans.ttf" cargo build --release --features embedded-font
         mv target/x86_64-unknown-none/release/libos_terminal.a libos_terminal-embedfont-sc-x86_64.a
         mv target/i686-unknown-none/release/libos_terminal.a libos_terminal-embedfont-sc-i686.a
+        mv target/aarch64-unknown-none-softfloat/release/libos_terminal.a libos_terminal-embedfont-sc-aarch64.a
+        mv target/riscv64imac-unknown-none-elf/release/libos_terminal.a libos_terminal-embedfont-sc-riscv64.a
+        mv target/loongarch64-unknown-none-softfloat/release/libos_terminal.a libos_terminal-embedfont-sc-loongarch64.a
 
     - name: Generate header
       run: cbindgen --output os_terminal.h
@@ -51,10 +59,5 @@ jobs:
         name: ${{ steps.date.outputs.date }}
         tag_name: ${{ steps.date.outputs.date }}
         files: |
-          libos_terminal-x86_64.a
-          libos_terminal-i686.a
-          libos_terminal-embedfont-x86_64.a
-          libos_terminal-embedfont-i686.a
-          libos_terminal-embedfont-sc-x86_64.a
-          libos_terminal-embedfont-sc-i686.a
+          libos_terminal-*.a
           os_terminal.h
