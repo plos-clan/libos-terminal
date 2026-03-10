@@ -16,7 +16,7 @@ opt-level = 3
 codegen-units = 1
 
 [dependencies.os-terminal]
-version = "0.7.0"
+version = "0.7.1"
 features = ["truetype"]
 default-features = false
 
