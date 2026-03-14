@@ -1,9 +1,8 @@
 #![no_std]
 #![no_main]
-#![feature(linkage)]
 #![feature(alloc_error_handler)]
-#![allow(static_mut_refs)]
 #![allow(unsafe_op_in_unsafe_fn)]
+#![allow(clippy::missing_safety_doc)]
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
 extern crate alloc;
