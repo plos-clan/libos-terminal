@@ -156,9 +156,8 @@ unsafe fn terminal_new_impl(
         b_shift: info.blue_mask_shift + info.blue_mask_size.saturating_sub(8),
     };
 
-    let mut terminal = Terminal::new(display);
     let font_manager = TrueTypeFont::new(font_size, font_bytes).with_subpixel(true);
-    terminal.set_font_manager(Box::new(font_manager));
+    let terminal = Terminal::new(display, Box::new(font_manager));
 
     Box::into_raw(Box::new(terminal)) as *mut c_void
 }
