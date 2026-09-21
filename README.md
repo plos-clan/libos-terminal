@@ -8,17 +8,17 @@ Download the header file and your prefered version of lib from [releases](https:
 
 Link the library to your project.
 
-Remember to set `TERMINAL_EMBEDDED_FONT` to your compiler based on the version of the lib you are using.
+Remember to define `TERMINAL_EMBEDDED_FONT` when using either embedded-font library.
 
 ## Build
 
-Build directly to get the two target files:
+The default build enables `swash` and `woff2` and accepts a font buffer from the caller:
 
 ```bash
 cargo build --release
 ```
 
-The production build will be in `target/release/<target>/` directory.
+The production libraries will be in the `target/<target>/release/` directories.
 
 And use `cbindgen` to generate the header file:
 

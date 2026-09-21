@@ -16,10 +16,11 @@ opt-level = 3
 codegen-units = 1
 
 [dependencies.os-terminal]
-version = "0.7.3"
-features = ["truetype", "woff2"]
+version = "0.7.4"
 default-features = false
 
 [features]
-default = []
-embedded-font = []
+default = ["swash", "woff2"]
+ab_glyph = ["os-terminal/ab_glyph"]
+swash = ["os-terminal/swash"]
+woff2 = ["os-terminal/woff2"]

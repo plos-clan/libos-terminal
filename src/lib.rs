@@ -1,6 +1,5 @@
 #![no_std]
 #![no_main]
-#![feature(alloc_error_handler)]
 #![allow(unsafe_op_in_unsafe_fn)]
 #![allow(clippy::missing_safety_doc)]
 #![allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -13,9 +12,22 @@ use alloc::string::String;
 use core::alloc::{GlobalAlloc, Layout};
 use core::ffi::{CStr, c_char, c_void};
 use core::panic::PanicInfo;
-use os_terminal::font::TrueTypeFont;
 use os_terminal::{ClipboardHandler, DrawTarget};
 use os_terminal::{MouseInput, Palette, Rgb, Terminal};
+
+#[cfg(feature = "ab_glyph")]
+use os_terminal::font::AbGlyphFont;
+#[cfg(all(feature = "swash", not(feature = "ab_glyph")))]
+use os_terminal::font::SwashFont;
+
+#[cfg(not(any(feature = "ab_glyph", feature = "swash")))]
+compile_error!("enable either `ab_glyph` or `swash`");
+
+#[cfg(all(feature = "ab_glyph", feature = "swash"))]
+compile_error!("`ab_glyph` and `swash` are mutually exclusive");
+
+#[cfg(all(feature = "woff2", not(feature = "swash")))]
+compile_error!("`woff2` requires `swash`");
 
 #[global_allocator]
 static ALLOCATOR: Allocator = Allocator;
@@ -47,19 +59,12 @@ unsafe fn panic(_info: &PanicInfo) -> ! {
     loop {}
 }
 
-#[alloc_error_handler]
-fn alloc_error_handler(_layout: Layout) -> ! {
-    panic!();
-}
-
 #[unsafe(no_mangle)]
-// #[linkage = "weak"]
 extern "C" fn fmaxf(x: f32, y: f32) -> f32 {
     (if x.is_nan() || x < y { y } else { x }) * 1.0
 }
 
 #[unsafe(no_mangle)]
-// #[linkage = "weak"]
 extern "C" fn fminf(x: f32, y: f32) -> f32 {
     (if y.is_nan() || x < y { x } else { y }) * 1.0
 }
@@ -156,14 +161,17 @@ unsafe fn terminal_new_impl(
         b_shift: info.blue_mask_shift + info.blue_mask_size.saturating_sub(8),
     };
 
-    let font_manager = TrueTypeFont::new(font_size, font_bytes).with_subpixel(true);
+    #[cfg(feature = "ab_glyph")]
+    let font_manager = AbGlyphFont::new(font_size, font_bytes);
+    #[cfg(all(feature = "swash", not(feature = "ab_glyph")))]
+    let font_manager = SwashFont::new(font_size, font_bytes).with_subpixel(true);
     let terminal = Terminal::new(display, Box::new(font_manager));
 
     Box::into_raw(Box::new(terminal)) as *mut c_void
 }
 
 #[unsafe(no_mangle)]
-#[cfg(feature = "embedded-font")]
+#[cfg(embedded_font)]
 pub unsafe extern "C" fn terminal_new(
     display: *const TerminalDisplay,
     font_size: f32,
@@ -175,7 +183,7 @@ pub unsafe extern "C" fn terminal_new(
 }
 
 #[unsafe(no_mangle)]
-#[cfg(not(feature = "embedded-font"))]
+#[cfg(not(embedded_font))]
 pub unsafe extern "C" fn terminal_new(
     display: *const TerminalDisplay,
     font_buffer: *const u8,
@@ -206,10 +214,7 @@ pub extern "C" fn terminal_rows(terminal: *mut c_void) -> usize {
     if terminal.is_null() {
         return 0;
     }
-    unsafe {
-        let terminal = Box::from_raw(terminal as *mut Terminal<Display>);
-        terminal.rows()
-    }
+    unsafe { (&*(terminal as *const Terminal<Display>)).rows() }
 }
 
 #[unsafe(no_mangle)]
@@ -217,10 +222,7 @@ pub extern "C" fn terminal_columns(terminal: *mut c_void) -> usize {
     if terminal.is_null() {
         return 0;
     }
-    unsafe {
-        let terminal = Box::from_raw(terminal as *mut Terminal<Display>);
-        terminal.columns()
-    }
+    unsafe { (&*(terminal as *const Terminal<Display>)).columns() }
 }
 
 macro_rules! with_terminal {
@@ -238,17 +240,13 @@ pub extern "C" fn terminal_flush(terminal: *mut c_void) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn terminal_process(terminal: *mut c_void, s: *const c_char) {
+pub extern "C" fn terminal_process(terminal: *mut c_void, data: *const u8, len: usize) {
+    if data.is_null() || len == 0 {
+        return;
+    }
     with_terminal!(terminal, t => {
-        if let Ok(s) = unsafe { CStr::from_ptr(s).to_str() } {
-            t.process(s.as_bytes());
-        }
+        t.process(unsafe { core::slice::from_raw_parts(data, len) });
     });
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn terminal_process_byte(terminal: *mut c_void, c: u8) {
-    with_terminal!(terminal, t => { t.process(&[c]); });
 }
 
 #[unsafe(no_mangle)]

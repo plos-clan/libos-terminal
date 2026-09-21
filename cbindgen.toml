@@ -7,7 +7,7 @@ sys_includes = ["stdbool.h", "stddef.h", "stdint.h"]
 no_includes = true
 
 [defines]
-"feature = embedded-font" = "TERMINAL_EMBEDDED_FONT"
+"embedded_font" = "TERMINAL_EMBEDDED_FONT"
 
 [export]
 exclude = ["fmaxf", "fminf"]
